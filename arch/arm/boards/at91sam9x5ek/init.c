@@ -254,12 +254,26 @@ static void ek_add_device_usb(void) {}
 #endif
 
 struct gpio_led leds[] = {
+#if 0 
+	{
+		.gpio	= AT91_PIN_PB18,
+		.active_low	= 1,
+		.led	= {
+			.name = "d1",
+		},
+	}, {
+		.gpio	= AT91_PIN_PD21,
+		.led	= {
+			.name = "d2",
+		},
+#else		
 	{
 		.gpio	= AT91_PIN_PC4,
 		.active_low	= 1,
 		.led	= {
 			.name = "d1",
 		},
+	#if 0
 	}, {
 		.gpio	= AT91_PIN_PA27,
 		.led	= {
@@ -290,6 +304,8 @@ struct gpio_led leds[] = {
 		.led	= {
 			.name = "d7",
 		},
+	#endif
+#endif
 	},
 };
 
@@ -301,7 +317,7 @@ static void __init ek_add_led(void)
 		at91_set_gpio_output(leds[i].gpio, leds[i].active_low);
 		led_gpio_register(&leds[i]);
 	}
-	led_set_trigger(LED_TRIGGER_HEARTBEAT, &leds[1].led);
+	led_set_trigger(LED_TRIGGER_HEARTBEAT, &leds[0].led);
 }
 
 static int at91sam9x5ek_mem_init(void)

@@ -13,11 +13,11 @@ global.dhcp.client_id="${at91sam9x5cm.board}-${at91sam9x5cm.vendor}"
 #eth0.serverip=a.b.c.d
 
 # can be either 'nfs', 'tftp', 'nor' or 'nand'
-kernel_loc=nfs
+kernel_loc=nand
 # can be either 'net', 'nor', 'nand' or 'initrd'
-rootfs_loc=net
+rootfs_loc=nand
 # can be either 'nfs', 'tftp', 'nand' or empty
-oftree_loc=nfs
+oftree_loc=nand
 
 # can be either 'jffs2' or 'ubifs'
 rootfs_type=ubifs
