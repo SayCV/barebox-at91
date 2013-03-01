@@ -23,14 +23,25 @@
 #include <init.h>
 #include <sizes.h>
 
-void __naked __bare_init reset(void)
+void __bare_init at91sam9263_lowlevel_init(void)
 {
-	common_reset();
+	struct at91sam926x_lowlevel_cfg cfg;
+
+	cfg.pio = IOMEM(AT91SAM9263_BASE_PIOD);
+	cfg.sdramc = IOMEM(AT91SAM9263_BASE_SDRAMC0);
+	cfg.ebi_pio_is_peripha = true;
+	cfg.matrix_csa = AT91_MATRIX_EBI0CSA;
+
+	at91sam926x_lowlevel_init(&cfg);
+
+	barebox_arm_entry(AT91_CHIPSELECT_1, at91_get_sdram_size(cfg.sdramc), 0);
+}
+
+void __naked __bare_init barebox_arm_reset_vector(void)
+{
+	arm_cpu_lowlevel_init();
 
 	arm_setup_stack(AT91SAM9263_SRAM0_BASE + AT91SAM9263_SRAM0_SIZE - 16);
 
-	at91sam926x_lowlevel_init(IOMEM(AT91SAM9263_BASE_PIOD), true,
-				  AT91_MATRIX_EBI0CSA);
-
-	barebox_arm_entry(AT91_CHIPSELECT_1, at91_get_sdram_size(), 0);
+	at91sam9263_lowlevel_init();
 }
