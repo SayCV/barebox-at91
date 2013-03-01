@@ -255,15 +255,40 @@ static void ek_add_device_usb(void) {}
 
 struct gpio_led leds[] = {
 	{
-		.gpio	= AT91_PIN_PB18,
+		.gpio	= AT91_PIN_PC4,
 		.active_low	= 1,
 		.led	= {
 			.name = "d1",
 		},
 	}, {
-		.gpio	= AT91_PIN_PD21,
+		.gpio	= AT91_PIN_PA27,
 		.led	= {
 			.name = "d2",
+		},
+	}, {
+		.gpio	= AT91_PIN_PA29,
+		.led	= {
+			.name = "d3",
+		},
+	}, {
+		.gpio	= AT91_PIN_PA5,
+		.led	= {
+			.name = "d4",
+		},
+	}, {
+		.gpio	= AT91_PIN_PA6,
+		.led	= {
+			.name = "d5",
+		},
+	}, {
+		.gpio	= AT91_PIN_PA10,
+		.led	= {
+			.name = "d6",
+		},
+	}, {
+		.gpio	= AT91_PIN_PA9,
+		.led	= {
+			.name = "d7",
 		},
 	},
 };
