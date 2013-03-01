@@ -1,3 +1,4 @@
+#include <common.h>
 #include <io.h>
 #include <init.h>
 #include <sizes.h>
@@ -249,9 +250,9 @@ static int pcaal1_board_init(void)
 	return 0;
 }
 
-void __naked reset(void)
+void __naked barebox_arm_reset_vector(void)
 {
-	common_reset();
+	arm_cpu_lowlevel_init();
 
 	pcaal1_board_init();
 
