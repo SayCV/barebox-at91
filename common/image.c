@@ -85,6 +85,7 @@ static table_entry_t os_name[] = {
 	{ IH_OS_SOLARIS,	"solaris",	"Solaris",	},
 	{ IH_OS_SVR4,		"svr4",		"SVR4",		},
 #endif
+	{ IH_OS_RTEMS,		"rtems",	"RTEMS",	},
 	{ IH_OS_BAREBOX,	"barebox",	"barebox",	},
 #ifndef __BAREBOX__
 	{ IH_OS_VXWORKS,	"vxworks",	"VxWorks",	},

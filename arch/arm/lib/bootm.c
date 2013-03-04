@@ -119,6 +119,13 @@ static struct image_handler rawimage_handler = {
 	.filetype = filetype_unknown,
 };
 
+static struct image_handler bbuimage_handler = {
+	.name = "ARM barebox uImage",
+	.bootm = do_bootm_linux,
+	.filetype = filetype_uimage,
+	.ih_os = IH_OS_BAREBOX,
+};
+
 struct zimage_header {
 	u32	unused[9];
 	u32	magic;
@@ -310,6 +317,18 @@ static struct image_handler barebox_handler = {
 	.filetype = filetype_arm_barebox,
 };
 
+static int do_bootm_rtems(struct image_data *data)
+{
+	return __do_bootm_linux(data, 0);
+}
+
+static struct image_handler rtems_handler = {
+	.name = "ARM rtems uImage",
+	.bootm = do_bootm_rtems,
+	.filetype = filetype_uimage,
+	.ih_os = IH_OS_RTEMS,
+};
+
 #include <aimage.h>
 
 static int aimage_load_resource(int fd, struct resource *r, void* buf, int ps)
@@ -471,6 +490,8 @@ static int armlinux_register_image_handler(void)
 	register_image_handler(&uimage_handler);
 	register_image_handler(&rawimage_handler);
 	register_image_handler(&zimage_handler);
+	register_image_handler(&bbuimage_handler);
+	register_image_handler(&rtems_handler);
 	if (IS_BUILTIN(CONFIG_CMD_BOOTM_AIMAGE)) {
 		register_image_handler(&aimage_handler);
 		binfmt_register(&binfmt_aimage_hook);

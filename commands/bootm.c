@@ -425,7 +425,7 @@ static int do_bootm(int argc, char *argv[])
 
 	ret = handler->bootm(&data);
 
-	printf("handler failed with %s\n", strerror(-ret));
+	printf("Cannot bootm: %s, handler failed with %s\n", handler->name, strerror(-ret));
 
 err_out:
 	free(data.initrd_file);
