@@ -241,7 +241,10 @@ static void ek_add_device_spi(void)
  */
 static struct at91_usbh_data ek_usbh_hs_data = {
 	.ports			= 2,
+#if 0
 	.vbus_pin		= {AT91_PIN_PD19, AT91_PIN_PD20},
+#else
+#endif
 };
 
 static void ek_add_device_usb(void)
