@@ -262,7 +262,8 @@ void at91sam9x5ek_devices_detect_hw(void)
 	at91sam9x5ek_devices_detect_one("/dev/ds24310");
 	at91sam9x5ek_devices_detect_one("/dev/ds24311");
 	at91sam9x5ek_devices_detect_one("/dev/ds24330");
-
+	
+	sn = 3<<5, rev = 1;
 	pr_info("sn: 0x%x, rev: 0x%x\n", sn, rev);
 	armlinux_set_revision(rev);
 	armlinux_set_serial(sn);
