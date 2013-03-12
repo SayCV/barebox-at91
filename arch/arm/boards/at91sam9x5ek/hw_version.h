@@ -17,7 +17,7 @@
 #ifndef __HW_REVISION_H__
 #define __HW_REVISION_H__
 
-#defne HACKED_HW_VERSION_H_VENDOR_SayCV 1
+#define HACKED_HW_VERSION_H_VENDOR_SayCV 1
 enum vendor_id {
 	VENDOR_UNKNOWN	= 0,
 	VENDOR_EMBEST	= 1,

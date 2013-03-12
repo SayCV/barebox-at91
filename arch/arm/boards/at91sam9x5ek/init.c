@@ -357,7 +357,7 @@ static int at91sam9x5ek_devices_init(void)
 	ek_add_led();
 	ek_add_device_i2c();
 	ek_add_device_lcdc();
-#endif
+
 	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(CONFIG_MACH_AT91SAM9X5EK);
 
