@@ -185,18 +185,23 @@ struct qt1070_platform_data qt1070_pdata = {
 };
 
 static struct i2c_board_info i2c_devices[] = {
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	{
 		.platform_data = &qt1070_pdata,
 		I2C_BOARD_INFO("qt1070", 0x1b),
-	}, {
+	}, 
+#endif
+  {
 		I2C_BOARD_INFO("24c512", 0x51)
 	},
 };
 
 static void ek_add_device_i2c(void)
 {
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	at91_set_gpio_input(qt1070_pdata.irq_pin, 0);
 	at91_set_deglitch(qt1070_pdata.irq_pin, 1);
+#endif
 	at91_add_device_i2c(0, i2c_devices, ARRAY_SIZE(i2c_devices));
 }
 
@@ -241,7 +246,7 @@ static void ek_add_device_spi(void)
  */
 static struct at91_usbh_data ek_usbh_hs_data = {
 	.ports			= 2,
-#if 0
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	.vbus_pin		= {AT91_PIN_PD19, AT91_PIN_PD20},
 #else
 #endif
@@ -257,7 +262,7 @@ static void ek_add_device_usb(void) {}
 #endif
 
 struct gpio_led leds[] = {
-#if 0 
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	{
 		.gpio	= AT91_PIN_PB18,
 		.active_low	= 1,
@@ -333,10 +338,11 @@ mem_initcall(at91sam9x5ek_mem_init);
 
 static void ek_add_device_w1(void)
 {
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	at91_set_gpio_input(w1_pdata.pin, 0);
 	at91_set_multi_drive(w1_pdata.pin, 1);
 	add_generic_device_res("w1-gpio", DEVICE_ID_SINGLE, NULL, 0, &w1_pdata);
-
+#endif
 	at91sam9x5ek_devices_detect_hw();
 }
 
@@ -351,7 +357,7 @@ static int at91sam9x5ek_devices_init(void)
 	ek_add_led();
 	ek_add_device_i2c();
 	ek_add_device_lcdc();
-
+#endif
 	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(CONFIG_MACH_AT91SAM9X5EK);
 

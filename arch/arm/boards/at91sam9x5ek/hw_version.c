@@ -43,6 +43,7 @@ static struct board_info {
 	{"SAM9X25-CM",		BOARD_TYPE_CPU,		5},
 	{"SAM9X35-CM",		BOARD_TYPE_CPU,		6},
 	{"PDA-DM",		BOARD_TYPE_DM,		7},
+	{"SAM9X25-SayCV",		BOARD_TYPE_DM,		8},
 };
 
 static struct board_info* get_board_info_by_name(const char *name)
@@ -65,6 +66,7 @@ static struct vendor_info {
 	{"RONETIX",		VENDOR_RONETIX},
 	{"COGENT",		VENDOR_COGENT},
 	{"PDA",			VENDOR_PDA},
+	{"SayCV",			VENDOR_SayCV},
 };
 
 static struct vendor_info* get_vendor_info_by_name(const char *name)
@@ -259,15 +261,19 @@ static int cm_cogent_fixup(struct fdt_header *fdt)
 
 void at91sam9x5ek_devices_detect_hw(void)
 {
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	at91sam9x5ek_devices_detect_one("/dev/ds24310");
 	at91sam9x5ek_devices_detect_one("/dev/ds24311");
 	at91sam9x5ek_devices_detect_one("/dev/ds24330");
-	
-	sn = 3<<5, rev = 1;
+#else
+	sn  = VENDOR_COGENT<<5;
+	rev = 0;
+#endif	
 	pr_info("sn: 0x%x, rev: 0x%x\n", sn, rev);
 	armlinux_set_revision(rev);
 	armlinux_set_serial(sn);
-
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	if (at91sam9x5ek_cm_is_vendor(VENDOR_COGENT))
 		of_register_fixup(cm_cogent_fixup);
+#endif
 }

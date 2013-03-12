@@ -17,6 +17,7 @@
 #ifndef __HW_REVISION_H__
 #define __HW_REVISION_H__
 
+#defne HACKED_HW_VERSION_H_VENDOR_SayCV 1
 enum vendor_id {
 	VENDOR_UNKNOWN	= 0,
 	VENDOR_EMBEST	= 1,
@@ -24,6 +25,7 @@ enum vendor_id {
 	VENDOR_RONETIX	= 3,
 	VENDOR_COGENT	= 4,
 	VENDOR_PDA	= 5,
+	VENDOR_SayCV	= 6,
 };
 
 bool at91sam9x5ek_cm_is_vendor(enum vendor_id vid);
