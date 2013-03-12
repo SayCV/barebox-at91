@@ -161,6 +161,7 @@ static void ek_add_device_lcdc(void)
 static void ek_add_device_lcdc(void) {}
 #endif
 
+#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 /*
  * MCI (SD/MMC)
  */
@@ -179,6 +180,9 @@ static void ek_add_device_mci(void)
 	/* MMC0 */
 	at91_add_device_mci(0, &mci0_data);
 }
+#else
+static void ek_add_device_mci(void) {}
+#endif
 
 struct qt1070_platform_data qt1070_pdata = {
 	.irq_pin	= AT91_PIN_PA7,

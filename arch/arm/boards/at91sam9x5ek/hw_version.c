@@ -43,7 +43,7 @@ static struct board_info {
 	{"SAM9X25-CM",		BOARD_TYPE_CPU,		5},
 	{"SAM9X35-CM",		BOARD_TYPE_CPU,		6},
 	{"PDA-DM",		BOARD_TYPE_DM,		7},
-	{"SAM9X25-SayCV",		BOARD_TYPE_DM,		8},
+	{"SayCV-EK",		BOARD_TYPE_DM,		8},
 };
 
 static struct board_info* get_board_info_by_name(const char *name)
