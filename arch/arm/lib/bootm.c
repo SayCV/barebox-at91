@@ -319,7 +319,77 @@ static struct image_handler barebox_handler = {
 
 static int do_bootm_rtems(struct image_data *data)
 {
+#if 1
 	return __do_bootm_linux(data, 0);
+#else
+	unsigned long kernel;
+	unsigned long initrd_start = 0, initrd_size = 0;
+	struct memory_bank *bank;
+	unsigned long load_address;
+	int architecture;
+	void *params = NULL;
+	
+	//void (*theKernel)(int zero, int arch, void *params);
+	void (*theKernel)(void *params);
+
+	if (data->os_res) {
+		load_address = data->os_res->start;
+	} else if (data->os_address != UIMAGE_INVALID_ADDRESS) {
+		load_address = data->os_address;
+	} else {
+		bank = list_first_entry(&memory_banks,
+				struct memory_bank, list);
+		load_address = bank->start + SZ_32K;
+		if (bootm_verbose(data))
+			printf("no os load address, defaulting to 0x%08lx\n",
+				load_address);
+	}
+
+	if (!data->os_res && data->os) {
+		data->os_res = uimage_load_to_sdram(data->os,
+			data->os_num, load_address);
+		if (!data->os_res)
+			return -ENOMEM;
+	}
+
+	if (!data->os_res) {
+		data->os_res = file_to_sdram(data->os_file, load_address);
+		if (!data->os_res)
+			return -ENOMEM;
+	}
+
+	kernel = data->os_res->start + data->os_entry;
+	
+	printf ("## Transferring control to RTEMS (at address %08lx) ...\n\r",
+		(ulong)kernel);
+
+	if (bootm_verbose(data)) {
+		printf("\nStarting kernel at 0x%08lx", kernel);
+		if (initrd_size)
+			printf(", initrd at 0x%08lx", initrd_start);
+		if (data->oftree)
+			printf(", oftree at 0x%p", data->oftree);
+		printf("...\n");
+	}
+	
+	architecture = armlinux_get_architecture();
+	//params = armlinux_bootparams;
+	
+	theKernel = (void (*)(int, int, void*))kernel;
+	//start_linux((void *)kernel, swap, initrd_start, initrd_size, data->oftree);
+	shutdown_barebox();
+	
+	/*
+	 * RTEMS Parameters:
+	 *   r3: ptr to board info data
+	 */
+	//theKernel(0, architecture, params);
+	theKernel(0);
+	
+	reset_cpu(0);
+
+	return -ERESTARTSYS;
+#endif
 }
 
 static struct image_handler rtems_handler = {
