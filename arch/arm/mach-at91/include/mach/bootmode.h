@@ -7,7 +7,6 @@
 #ifndef __BOOTMODE_H__
 #define __BOOTMODE_H__
 
-extern struct at91_boot_mode at91_soc_boot_mode;
 
 struct at91_boot_mode {
 	u16 from;
@@ -15,6 +14,8 @@ struct at91_boot_mode {
 	u16 media;
 	u16 cs;
 };
+
+extern struct at91_boot_mode at91_soc_boot_mode;
 
 enum at91_soc_boot_from {
 	AT91_BOOT_FROM_UNKNOWN,
@@ -51,7 +52,7 @@ void at91_bootmode_device_register(void);
 #define at91_boot_media_nand()	(at91_soc_boot_mode.media == AT91_BOOT_MEDIA_NAND)
 #define at91_boot_media_nor()	(at91_soc_boot_mode.media == AT91_BOOT_MEDIA_NOR)
 #else
-static void inline void at91_bootmode_device_register(void) {}
+static void at91_bootmode_device_register(void) {}
 
 #define at91_boot_from_spi()	(0)
 #define at91_boot_from_mci()	(0)
