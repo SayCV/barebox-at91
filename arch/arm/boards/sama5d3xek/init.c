@@ -22,6 +22,8 @@
 #include <generated/mach-types.h>
 #include <partition.h>
 #include <fs.h>
+#include <linux/stat.h>
+#include <envfs.h>
 #include <fcntl.h>
 #include <io.h>
 #include <asm/hardware.h>
@@ -36,6 +38,7 @@
 #include <mach/at91_pmc.h>
 #include <mach/at91_rstc.h>
 #include <mach/at91sam9x5_matrix.h>
+#include <mach/bootmode.h>
 #include <input/qt1070.h>
 #include <readkey.h>
 #include <poller.h>
@@ -412,18 +415,55 @@ static int at91sama5d3xek_devices_init(void)
 
 	armlinux_set_bootparams((void *)(SAMA5_DDRCS + 0x100));
 
-	devfs_add_partition("nand0", 0x00000, SZ_256K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
-	dev_add_bb_dev("at91bootstrap_raw", "at91bootstrap");
-	devfs_add_partition("nand0", SZ_256K, SZ_256K + SZ_128K, DEVFS_PARTITION_FIXED, "self_raw");
-	dev_add_bb_dev("self_raw", "self0");
-	devfs_add_partition("nand0", SZ_512K + SZ_256K, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw");
-	dev_add_bb_dev("env_raw", "env0");
-	devfs_add_partition("nand0", SZ_1M, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw1");
-	dev_add_bb_dev("env_raw1", "env1");
+	if (at91_boot_media_at25() && IS_ENABLED(CONFIG_DRIVER_SPI_ATMEL)) {
+		devfs_add_partition("m25p0", 0x00000, SZ_64K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
+		devfs_add_partition("m25p0", SZ_64K, SZ_256K + SZ_128K, DEVFS_PARTITION_FIXED, "self_raw");
+		devfs_add_partition("m25p0", SZ_64K + SZ_256K + SZ_128K, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw");
+		devfs_add_partition("m25p0", SZ_64K + SZ_512K + SZ_128K, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw1");
+	} else if (!at91_boot_from_mci()) {
+		devfs_add_partition("nand0", 0x00000, SZ_256K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
+		dev_add_bb_dev("at91bootstrap_raw", "at91bootstrap");
+		devfs_add_partition("nand0", SZ_256K, SZ_256K + SZ_128K, DEVFS_PARTITION_FIXED, "self_raw");
+		dev_add_bb_dev("self_raw", "self0");
+		devfs_add_partition("nand0", SZ_512K + SZ_256K, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw");
+		dev_add_bb_dev("env_raw", "env0");
+		devfs_add_partition("nand0", SZ_1M, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw1");
+		dev_add_bb_dev("env_raw1", "env1");
+	}
 
 	return 0;
 }
 device_initcall(at91sama5d3xek_devices_init);
+
+#if defined(CONFIG_DEFAULT_ENVIRONMENT) && defined(CONFIG_MCI_ATMEL)
+static int sama5d3xek_env_init(void)
+{
+	struct stat s;
+	char *diskdev = "/dev/disk0.0";
+	int ret;
+
+	if (!at91_boot_from_mci())
+		return 0;
+
+	ret = stat(diskdev, &s);
+	if (ret) {
+		printf("no %s. using default env\n", diskdev);
+		return ret;
+	}
+
+	mkdir ("/boot", 0755);
+	ret = mount(diskdev, "fat", "/boot");
+	if (ret) {
+		printf("failed to mount %s\n", diskdev);
+		return ret;
+	}
+
+	default_environment_path = "/boot/bareboxenv";
+
+	return 0;
+}
+late_initcall(sama5d3xek_env_init);
+#endif
 
 static int at91sama5d3xek_console_init(void)
 {

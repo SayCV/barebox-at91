@@ -5,6 +5,8 @@
 #include <mach/at91_pmc.h>
 #include <mach/io.h>
 #include <mach/cpu.h>
+#include <mach/bootmode.h>
+#include <mach/sama5d3_bootmode.h>
 #include <linux/clk.h>
 
 #include "soc.h"
@@ -376,6 +378,82 @@ static void __init sama5d3_register_clocks(void)
 	//clk_enable(&dma1_clk);
 }
 
+static void sama5_boot_form_mci(uint32_t gpbr)
+{
+	switch (gpbr & SAMA5D3_BOOT_FROM_MEDIA_TYPE) {
+	case SAMA5D3_BOOT_FROM_MEDIA_SD:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_SD;
+		break;
+	case SAMA5D3_BOOT_FROM_MEDIA_MMC:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_MMC;
+		break;
+	case SAMA5D3_BOOT_FROM_MEDIA_EMMC:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_EMMC;
+		break;
+	}
+}
+
+static void sama5_boot_form_smc(void)
+{
+	switch (at91_soc_boot_mode.cs) {
+	case 0:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_NOR;
+		break;
+	case 3:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_NAND;
+		break;
+	}
+}
+
+static void sama5_boot_form_spi(uint32_t gpbr)
+{
+	switch (gpbr & SAMA5D3_BOOT_FROM_MEDIA_TYPE) {
+	case SAMA5D3_BOOT_FROM_MEDIA_SD:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_SD;
+		break;
+	case SAMA5D3_BOOT_FROM_MEDIA_MMC:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_MMC;
+		break;
+	case SAMA5D3_BOOT_FROM_MEDIA_EMMC:
+		at91_soc_boot_mode.media = AT91_BOOT_MEDIA_EMMC;
+		break;
+	}
+}
+
+static void sama5d3_boot_from(void)
+{
+	uint32_t gpbr = __raw_readl(SAMA5D3_BOOT_FROM_GPBR);
+
+	at91_soc_boot_mode.cs = 0;
+	at91_soc_boot_mode.media = AT91_BOOT_MEDIA_UNKNOWN;
+
+	if ((gpbr & SAMA5D3_BOOT_FROM_KEY) != SAMA5D3_BOOT_FROM_KEY) {
+		pr_warn("gpbr: boot from invalid\n");
+		return;
+	}
+
+	at91_soc_boot_mode.interface = (gpbr & SAMA5D3_BOOT_FROM_INTERFACE) >> SAMA5D3_BOOT_FROM_INTERFACE_SHIFT;
+	at91_soc_boot_mode.cs = (gpbr & SAMA5D3_BOOT_FROM_CS) >> SAMA5D3_BOOT_FROM_CS_SHIFT;
+
+	switch (gpbr & SAMA5D3_BOOT_FROM) {
+	case SAMA5D3_BOOT_FROM_SPI:
+		at91_soc_boot_mode.from = AT91_BOOT_FROM_SPI;
+		sama5_boot_form_spi(gpbr);
+		break;
+	case SAMA5D3_BOOT_FROM_MCI:
+		at91_soc_boot_mode.from = AT91_BOOT_FROM_MCI;
+		sama5_boot_form_mci(gpbr);
+		break;
+	case SAMA5D3_BOOT_FROM_SMC:
+		at91_soc_boot_mode.from = AT91_BOOT_FROM_SMC;
+		sama5_boot_form_smc();
+		break;
+	case SAMA5D3_BOOT_FROM_TWD:
+		at91_soc_boot_mode.from = AT91_BOOT_FROM_TWD;
+		break;
+	}
+}
+
 /* --------------------------------------------------------------------
  *  AT91SAM9x5 processor initialization
  * -------------------------------------------------------------------- */
@@ -387,6 +465,9 @@ static void sama5d3_initialize(void)
 
 	/* Register the processor-specific clocks */
 	sama5d3_register_clocks();
+
+	if (IS_ENABLED(CONFIG_AT91_BOOTMODE))
+		sama5d3_boot_from();
 
 	/* Register GPIO subsystem */
 	at91_add_sam9x5_gpio(0, SAMA5D3_BASE_PIOA);

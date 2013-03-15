@@ -103,6 +103,7 @@
 #define	SAMA5D3_BASE_HSMC	0xffffc000
 #define SAMA5D3_BASE_PIT	0xfffffe30
 #define SAMA5D3_BASE_WDT	0xfffffe40
+#define SAMA5D3_BASE_GPBR	0xfffffe60
 
 #define SAMA5D3_BASE_PMECC	0xffffc070
 #define SAMA5D3_BASE_PMERRLOC	0xffffc500

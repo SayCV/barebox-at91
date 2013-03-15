@@ -12,6 +12,7 @@
 #include <mach/hardware.h>
 #include <mach/cpu.h>
 #include <mach/at91_dbgu.h>
+#include <mach/bootmode.h>
 
 #include "soc.h"
 
@@ -247,6 +248,8 @@ static int at91_soc_device(void)
 	dev = add_generic_device_res("soc", DEVICE_ID_SINGLE, NULL, 0, NULL);
 	dev_add_param_fixed(dev, "name", (char*)at91_get_soc_type(&at91_soc_initdata));
 	dev_add_param_fixed(dev, "subname", (char*)at91_get_soc_subtype(&at91_soc_initdata));
+
+	at91_bootmode_device_register();
 
 	return 0;
 }
