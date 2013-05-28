@@ -17,6 +17,7 @@
 #include <linux/mtd/nand.h>
 #include <asm/sections.h>
 #include <asm/barebox-arm.h>
+#include <asm/barebox-arm-head.h>
 #include <mach/imx-nand.h>
 #include <mach/esdctl.h>
 #include <mach/generic.h>
@@ -154,10 +155,18 @@ static int __maybe_unused is_pagesize_2k(void)
 #endif
 }
 
+static noinline void __bare_init imx_nandboot_get_page(void *regs,
+		u32 offs, int pagesize_2k)
+{
+	imx_nandboot_send_cmd(regs, NAND_CMD_READ0);
+	imx_nandboot_nfc_addr(regs, offs, pagesize_2k);
+	imx_nandboot_send_page(regs, NFC_OUTPUT, pagesize_2k);
+}
+
 void __bare_init imx_nand_load_image(void *dest, int size)
 {
-	u32 tmp, page, block, blocksize, pagesize;
-	int pagesize_2k = 1;
+	u32 tmp, page, block, blocksize, pagesize, badblocks;
+	int pagesize_2k = 1, bbt = 0;
 	void *regs, *base, *spare0;
 
 #if defined(CONFIG_NAND_IMX_BOOT_512)
@@ -223,30 +232,52 @@ void __bare_init imx_nand_load_image(void *dest, int size)
 			writew(NFC_V2_SPAS_SPARESIZE(16), regs + NFC_V2_SPAS);
 	}
 
+	/*
+	 * Check if this image has a bad block table embedded. See
+	 * imx_bbu_external_nand_register_handler for more information
+	 */
+	badblocks = *(uint32_t *)(base + ARM_HEAD_SPARE_OFS);
+	if (badblocks == IMX_NAND_BBT_MAGIC) {
+		bbt = 1;
+		badblocks = *(uint32_t *)(base + ARM_HEAD_SPARE_OFS + 4);
+	}
+
 	block = page = 0;
 
 	while (1) {
 		page = 0;
+
+		imx_nandboot_get_page(regs, block * blocksize +
+				page * pagesize, pagesize_2k);
+
+		if (bbt) {
+			if (badblocks & (1 << block)) {
+				block++;
+				continue;
+			}
+		} else if (pagesize_2k) {
+			if ((readw(spare0) & 0xff) != 0xff) {
+				block++;
+				continue;
+			}
+		} else {
+			if ((readw(spare0 + 4) & 0xff00) != 0xff00) {
+				block++;
+				continue;
+			}
+		}
+
 		while (page * pagesize < blocksize) {
 			debug("page: %d block: %d dest: %p src "
 					"0x%08x\n",
 					page, block, dest,
 					block * blocksize +
 					page * pagesize);
-
-			imx_nandboot_send_cmd(regs, NAND_CMD_READ0);
-			imx_nandboot_nfc_addr(regs, block * blocksize +
+			if (page)
+				imx_nandboot_get_page(regs, block * blocksize +
 					page * pagesize, pagesize_2k);
-			imx_nandboot_send_page(regs, NFC_OUTPUT, pagesize_2k);
-			page++;
 
-			if (pagesize_2k) {
-				if ((readw(spare0) & 0xff) != 0xff)
-					continue;
-			} else {
-				if ((readw(spare0 + 4) & 0xff00) != 0xff00)
-					continue;
-			}
+			page++;
 
 			__memcpy32(dest, base, pagesize);
 			dest += pagesize;
@@ -292,7 +323,7 @@ int __bare_init imx_barebox_boot_nand_external(unsigned long nfc_base)
 		return 0;
 
 	src = (unsigned int *)nfc_base;
-	trg = (unsigned int *)_text;
+	trg = (unsigned int *)ld_var(_text);
 
 	/* Move ourselves out of NFC SRAM */
 	for (i = 0; i < 0x800 / sizeof(int); i++)
@@ -313,8 +344,9 @@ void __bare_init __noreturn imx21_barebox_boot_nand_external(void)
 	unsigned long nfc_base = MX21_NFC_BASE_ADDR;
 
 	if (imx_barebox_boot_nand_external(nfc_base)) {
-		jump_sdram(nfc_base - (unsigned long)_text);
-		imx_nand_load_image((void *)_text, barebox_image_size);
+		jump_sdram(nfc_base - ld_var(_text));
+		imx_nand_load_image((void *)ld_var(_text),
+				ld_var(barebox_image_size));
 	}
 
 	imx21_barebox_entry(0);
@@ -327,8 +359,9 @@ void __bare_init __noreturn imx25_barebox_boot_nand_external(void)
 	unsigned long nfc_base = MX25_NFC_BASE_ADDR;
 
 	if (imx_barebox_boot_nand_external(nfc_base)) {
-		jump_sdram(nfc_base - (unsigned long)_text);
-		imx_nand_load_image((void *)_text, barebox_image_size);
+		jump_sdram(nfc_base - ld_var(_text));
+		imx_nand_load_image((void *)ld_var(_text),
+				ld_var(_barebox_image_size));
 	}
 
 	imx25_barebox_entry(0);
@@ -341,8 +374,9 @@ void __bare_init __noreturn imx27_barebox_boot_nand_external(void)
 	unsigned long nfc_base = MX27_NFC_BASE_ADDR;
 
 	if (imx_barebox_boot_nand_external(nfc_base)) {
-		jump_sdram(nfc_base - (unsigned long)_text);
-		imx_nand_load_image((void *)_text, barebox_image_size);
+		jump_sdram(nfc_base - ld_var(_text));
+		imx_nand_load_image((void *)ld_var(_text),
+				ld_var(_barebox_image_size));
 	}
 
 	imx27_barebox_entry(0);
@@ -355,8 +389,9 @@ void __bare_init __noreturn imx31_barebox_boot_nand_external(void)
 	unsigned long nfc_base = MX31_NFC_BASE_ADDR;
 
 	if (imx_barebox_boot_nand_external(nfc_base)) {
-		jump_sdram(nfc_base - (unsigned long)_text);
-		imx_nand_load_image((void *)_text, barebox_image_size);
+		jump_sdram(nfc_base - ld_var(_text));
+		imx_nand_load_image((void *)ld_var(_text),
+				ld_var(_barebox_image_size));
 	}
 
 	imx31_barebox_entry(0);
@@ -369,8 +404,9 @@ void __bare_init __noreturn imx35_barebox_boot_nand_external(void)
 	unsigned long nfc_base = MX35_NFC_BASE_ADDR;
 
 	if (imx_barebox_boot_nand_external(nfc_base)) {
-		jump_sdram(nfc_base - (unsigned long)_text);
-		imx_nand_load_image((void *)_text, barebox_image_size);
+		jump_sdram(nfc_base - ld_var(_text));
+		imx_nand_load_image((void *)ld_var(_text),
+				ld_var(_barebox_image_size));
 	}
 
 	imx35_barebox_entry(0);

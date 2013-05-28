@@ -75,7 +75,7 @@ static int imx53_init(void)
 }
 postcore_initcall(imx53_init);
 
-void imx53_init_lowlevel(unsigned int cpufreq_mhz)
+void imx53_init_lowlevel_early(unsigned int cpufreq_mhz)
 {
 	void __iomem *ccm = (void __iomem *)MX53_CCM_BASE_ADDR;
 	u32 r;
@@ -146,7 +146,7 @@ void imx53_init_lowlevel(unsigned int cpufreq_mhz)
 	/* make sure change is effective */
 	while (readl(ccm + MX5_CCM_CDHIPR));
 
-	imx53_setup_pll_216((void __iomem *)MX53_PLL3_BASE_ADDR);
+	imx5_setup_pll_216((void __iomem *)MX53_PLL3_BASE_ADDR);
 	imx5_setup_pll_455((void __iomem *)MX53_PLL4_BASE_ADDR);
 
 	/* Set the platform clock dividers */
@@ -188,8 +188,12 @@ void imx53_init_lowlevel(unsigned int cpufreq_mhz)
 	writel(0xffffffff, ccm + MX5_CCM_CCGR6);
 	writel(0xffffffff, ccm + MX53_CCM_CCGR7);
 
-	if (!IS_ENABLED(__PBL__))
-		clock_notifier_call_chain();
-
 	writel(0, ccm + MX5_CCM_CCDR);
+}
+
+void imx53_init_lowlevel(unsigned int cpufreq_mhz)
+{
+	imx53_init_lowlevel_early(cpufreq_mhz);
+
+	clock_notifier_call_chain();
 }

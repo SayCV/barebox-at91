@@ -23,7 +23,7 @@
 #include <environment.h>
 #include <mach/imx25-regs.h>
 #include <asm/armlinux.h>
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 #include <asm/barebox-arm.h>
 #include <mach/gpio.h>
 #include <io.h>
@@ -104,7 +104,7 @@ struct imx_flash_header __flash_header_section flash_header = {
 unsigned long __image_len_section barebox_len = DCD_BAREBOX_SIZE;
 
 static struct fec_platform_data fec_info = {
-	.xcv_type	= RMII,
+	.xcv_type	= PHY_INTERFACE_MODE_RMII,
 	.phy_addr	= 1,
 };
 

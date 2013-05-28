@@ -6,7 +6,7 @@
 #ifndef CONFIG_GPIOLIB
 static inline int gpio_request(unsigned gpio, const char *label)
 {
-       return 0;
+	return 0;
 }
 
 static inline void gpio_free(unsigned gpio)
@@ -40,6 +40,7 @@ struct gpio_chip {
 };
 
 int gpiochip_add(struct gpio_chip *chip);
+void gpiochip_remove(struct gpio_chip *chip);
 
 int gpio_get_num(struct device_d *dev, int gpio);
 

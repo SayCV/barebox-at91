@@ -66,6 +66,7 @@ machine-$(CONFIG_ARCH_SAMSUNG)		:= samsung
 machine-$(CONFIG_ARCH_VERSATILE)	:= versatile
 machine-$(CONFIG_ARCH_VEXPRESS)		:= vexpress
 machine-$(CONFIG_ARCH_TEGRA)		:= tegra
+machine-$(CONFIG_ARCH_ZYNQ)		:= zynq
 
 # Board directory name.  This list is sorted alphanumerically
 # by CONFIG_* macro name.
@@ -162,6 +163,8 @@ board-$(CONFIG_MACH_TX53)			:= karo-tx53
 board-$(CONFIG_MACH_GUF_VINCELL)		:= guf-vincell
 board-$(CONFIG_MACH_EFIKA_MX_SMARTBOOK)		:= efika-mx-smartbook
 board-$(CONFIG_MACH_SABRESD)			:= freescale-mx6-sabresd
+board-$(CONFIG_MACH_REALQ7)			:= dmo-mx6-realq7
+board-$(CONFIG_MACH_ZEDBOARD)			:= avnet-zedboard
 
 machdirs := $(patsubst %,arch/arm/mach-%/,$(machine-y))
 
@@ -181,13 +184,14 @@ CPPFLAGS += -fdata-sections -ffunction-sections
 LDFLAGS_barebox += -static --gc-sections
 endif
 
+ifdef CONFIG_RELOCATABLE
+LDFLAGS_barebox += -pie
+endif
+
 ifdef CONFIG_IMAGE_COMPRESSION
 KBUILD_BINARY := arch/arm/pbl/zbarebox.bin
-KBUILD_TARGET := zbarebox.bin
-$(KBUILD_BINARY): $(KBUILD_TARGET)
 else
 KBUILD_BINARY := barebox.bin
-KBUILD_TARGET := barebox.bin
 endif
 
 barebox.netx: $(KBUILD_BINARY)
@@ -199,7 +203,6 @@ barebox.netx: $(KBUILD_BINARY)
 		--cookie=$(CONFIG_NETX_COOKIE);
 
 ifeq ($(machine-y),netx)
-KBUILD_TARGET := barebox.netx
 KBUILD_IMAGE := barebox.netx
 endif
 
@@ -207,7 +210,6 @@ barebox.s5p: $(KBUILD_BINARY)
 	$(Q)scripts/s5p_cksum $< barebox.s5p
 
 ifeq ($(CONFIG_ARCH_S5PCxx),y)
-KBUILD_TARGET := barebox.s5p
 KBUILD_IMAGE := barebox.s5p
 endif
 
@@ -219,7 +221,6 @@ MLO: $(KBUILD_BINARY)
 	$(call if_changed,mlo)
 
 ifeq ($(CONFIG_OMAP_BUILD_IFT),y)
-KBUILD_TARGET := MLO
 KBUILD_IMAGE := MLO
 endif
 
@@ -232,7 +233,6 @@ barebox.ubl: $(KBUILD_BINARY) FORCE
 	$(call if_changed,davinci_ubl_image)
 
 ifeq ($(CONFIG_ARCH_DAVINCI),y)
-KBUILD_TARGET := barebox.ubl
 KBUILD_IMAGE := barebox.ubl
 endif
 
@@ -243,16 +243,35 @@ barebox.spi: $(KBUILD_BINARY) FORCE
 	$(call if_changed,am35xx_spi_image)
 
 ifeq ($(CONFIG_OMAP_BUILD_SPI),y)
-KBUILD_TARGET := barebox.spi
 KBUILD_IMAGE := barebox.spi
 endif
 
+quiet_cmd_zynq_image = ZYNQ-IMG $@
+      cmd_zynq_image = scripts/zynq_mkimage $< $@
+
+barebox.zynq: $(KBUILD_BINARY) FORCE
+	$(call if_changed,zynq_image)
+
+ifeq ($(machine-y),zynq)
+KBUILD_IMAGE := barebox.zynq
+endif
+
 pbl := arch/arm/pbl
-zbarebox.S zbarebox.bin zbarebox: barebox.bin
-	$(Q)$(MAKE) $(build)=$(pbl) $(pbl)/$@
+$(pbl)/zbarebox.S $(pbl)/zbarebox.bin $(pbl)/zbarebox: barebox.bin
+	$(Q)$(MAKE) $(build)=$(pbl) $@
 
 archclean:
 	$(MAKE) $(clean)=$(pbl)
+
+dts := arch/arm/dts
+
+%.dtb: scripts
+	$(Q)$(MAKE) $(build)=$(dts) $(dts)/$@
+
+dtbs: scripts
+	$(Q)$(MAKE) $(build)=$(dts) dtbs
+
+KBUILD_DTBS := dtbs
 
 KBUILD_IMAGE ?= $(KBUILD_BINARY)
 
@@ -276,6 +295,8 @@ endif
 
 common-y += $(BOARD) $(MACH)
 common-y += arch/arm/lib/ arch/arm/cpu/
+
+common-$(CONFIG_BUILTIN_DTB) += arch/arm/dts/
 
 lds-y	:= arch/arm/lib/barebox.lds
 

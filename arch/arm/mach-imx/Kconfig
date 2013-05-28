@@ -17,9 +17,9 @@ config ARCH_TEXT_BASE
 	default 0x87f00000 if MACH_PCM043
 	default 0x08f80000 if MACH_SCB9328
 	default 0xa7e00000 if MACH_NESO
-	default 0x97f00000 if MACH_MX51_PDK
-	default 0x7ff00000 if MACH_MX53_LOCO
-	default 0x7ff00000 if MACH_MX53_SMD
+	default 0x97f00000 if MACH_FREESCALE_MX51_PDK
+	default 0x7ff00000 if MACH_FREESCALE_MX53_LOCO
+	default 0x7ff00000 if MACH_FREESCALE_MX53_SMD
 	default 0x87f00000 if MACH_GUF_CUPID
 	default 0x93d00000 if MACH_TX25
 	default 0x7ff00000 if MACH_TQMA53
@@ -31,6 +31,7 @@ config ARCH_TEXT_BASE
 	default 0x7fc00000 if MACH_GUF_VINCELL
 	default 0x97f00000 if MACH_EFIKA_MX_SMARTBOOK
 	default 0x17800000 if MACH_SABRESD
+	default 0x4fc00000 if MACH_REALQ7
 
 config BOARDINFO
 	default "Eukrea CPUIMX25" if MACH_EUKREA_CPUIMX25
@@ -61,6 +62,7 @@ config BOARDINFO
 	default "Ka-Ro tx53" if MACH_TX53
 	default "Garz+Fricke Vincell" if MACH_GUF_VINCELL
 	default "SabreSD" if MACH_SABRESD
+	default "DataModul i.MX6Q Real Qseven" if MACH_REALQ7
 
 choice
 	prompt "Select boot mode"
@@ -149,6 +151,12 @@ config NAND_IMX_BOOT_512_2K
 
 endchoice
 
+config BAREBOX_UPDATE_IMX_EXTERNAL_NAND
+	bool
+	depends on ARCH_IMX_EXTERNAL_BOOT_NAND
+	depends on BAREBOX_UPDATE
+	default y
+
 comment "Freescale i.MX System-on-Chip"
 
 choice
@@ -157,44 +165,53 @@ choice
 config ARCH_IMX1
 	bool "i.MX1"
 	select CPU_ARM920T
+	select PINCTRL_IMX_IOMUX_V1
 
 config ARCH_IMX21
 	bool "i.MX21"
 	select CPU_ARM926T
+	select PINCTRL_IMX_IOMUX_V1
 
 config ARCH_IMX25
 	bool "i.MX25"
 	select CPU_ARM926T
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX27
 	bool "i.MX27"
 	select CPU_ARM926T
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V1
 
 config ARCH_IMX31
 	select CPU_V6
 	bool "i.MX31"
+	select PINCTRL_IMX_IOMUX_V2
 
 config ARCH_IMX35
 	bool "i.MX35"
 	select CPU_V6
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX51
 	bool "i.MX51"
 	select CPU_V7
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX53
 	bool "i.MX53"
 	select CPU_V7
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX6
 	bool "i.MX6"
 	select ARCH_HAS_FEC_IMX
 	select CPU_V7
+	select PINCTRL_IMX_IOMUX_V3
 
 endchoice
 
@@ -495,6 +512,10 @@ config MACH_SABRELITE
 
 config MACH_SABRESD
 	bool "Freescale i.MX6 SabreSD"
+
+config MACH_REALQ7
+	bool "DataModul i.MX6Q Real Qseven Board"
+	select HAVE_DEFAULT_ENVIRONMENT_NEW
 
 endchoice
 

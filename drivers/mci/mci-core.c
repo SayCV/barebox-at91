@@ -34,6 +34,7 @@
 #include <asm/byteorder.h>
 #include <block.h>
 #include <disks.h>
+#include <linux/err.h>
 
 #define MAX_BUFFER_NUMBER 0xffffffff
 
@@ -430,8 +431,10 @@ static int mmc_change_freq(struct mci *mci)
 	}
 
 	/* No high-speed support */
-	if (!mci->ext_csd[EXT_CSD_HS_TIMING])
+	if (!mci->ext_csd[EXT_CSD_HS_TIMING]) {
+		dev_dbg(mci->mci_dev, "No high-speed support\n");
 		return 0;
+	}
 
 	/* High Speed is set, there are two types: 52MHz and 26MHz */
 	if (cardtype & EXT_CSD_CARD_TYPE_52)
@@ -605,12 +608,16 @@ static void mci_set_clock(struct mci *mci, unsigned clock)
 {
 	struct mci_host *host = mci->host;
 
-	/* check against any given limits */
+	/* check against any given limits at the host's side */
 	if (clock > host->f_max)
 		clock = host->f_max;
 
 	if (clock < host->f_min)
 		clock = host->f_min;
+
+	/* check against the limit at the card's side */
+	if (mci->tran_speed != 0 && clock > mci->tran_speed)
+		clock = mci->tran_speed;
 
 	host->clock = clock;	/* the new target frequency */
 	mci_set_ios(mci);
@@ -669,7 +676,8 @@ static void mci_detect_version_from_csd(struct mci *mci)
 			mci->version = MMC_VERSION_1_2;
 			break;
 		}
-		printf("detected card version %s\n", vstr);
+
+		dev_info(mci->mci_dev, "detected card version %s\n", vstr);
 	}
 }
 
@@ -891,8 +899,9 @@ static int mci_startup_mmc(struct mci *mci)
 			mci_set_clock(mci, 52000000);
 		else
 			mci_set_clock(mci, 26000000);
-	} else
+	} else {
 		mci_set_clock(mci, 20000000);
+	}
 
 	/*
 	 * Unlike SD, MMC cards dont have a configuration register to notify
@@ -1169,7 +1178,7 @@ static int mci_sd_read(struct block_device *blk, void *buffer, int block,
 	}
 
 	if (block > MAX_BUFFER_NUMBER) {
-		pr_err("Cannot handle block number %d. Too large!\n", block);
+		dev_err(mci->mci_dev, "Cannot handle block number %d. Too large!\n", block);
 		return -EINVAL;
 	}
 
@@ -1366,17 +1375,18 @@ static int mci_card_probe(struct mci *mci)
 	/* start with a host interface reset */
 	rc = (host->init)(host, mci->mci_dev);
 	if (rc) {
-		pr_err("Cannot reset the SD/MMC interface\n");
+		dev_err(mci->mci_dev, "Cannot reset the SD/MMC interface\n");
 		return rc;
 	}
 
 	mci_set_bus_width(mci, MMC_BUS_WIDTH_1);
-	mci_set_clock(mci, 1);	/* set the lowest available clock */
+	/* according to the SD card spec the detection can happen at 400 kHz */
+	mci_set_clock(mci, 400000);
 
 	/* reset the card */
 	rc = mci_go_idle(mci);
 	if (rc) {
-		pr_warning("Cannot reset the SD/MMC card\n");
+		dev_warn(mci->mci_dev, "Cannot reset the SD/MMC card\n");
 		goto on_error;
 	}
 
@@ -1451,43 +1461,23 @@ on_error:
  * @param val "0" does nothing, a "1" will probe for a MCI card
  * @return 0 on success
  */
-static int mci_set_probe(struct device_d *mci_dev, struct param_d *param,
-				const char *val)
+static int mci_set_probe(struct param_d *param, void *priv)
 {
-	struct mci *mci = mci_dev->priv;
-	int rc, probe;
+	struct mci *mci = priv;
+	int rc;
+
+	if (!mci->probe)
+		return 0;
 
 	rc = mci_check_if_already_initialized(mci);
 	if (rc != 0)
 		return 0;
 
-	probe = simple_strtoul(val, NULL, 0);
-	if (probe != 0) {
-		rc = mci_card_probe(mci);
-		if (rc != 0)
-			return rc;
-	}
-
-	return dev_param_set_generic(mci_dev, param, val);
-}
-
-/**
- * Add parameter to the MCI device on demand
- * @param mci_dev MCI device instance
- * @return 0 on success
- *
- * This parameter is only available (or usefull) if MCI card probing is delayed
- */
-static int add_mci_parameter(struct device_d *mci_dev)
-{
-	int rc;
-
-	/* provide a 'probing right now' parameter for the user */
-	rc = dev_add_param(mci_dev, "probe", mci_set_probe, NULL, 0);
+	rc = mci_card_probe(mci);
 	if (rc != 0)
 		return rc;
 
-	return dev_set_param(mci_dev, "probe", "0");
+	return 0;
 }
 
 /**
@@ -1510,8 +1500,10 @@ static int mci_probe(struct device_d *mci_dev)
 
 	dev_info(mci->host->hw_dev, "registered as %s\n", dev_name(mci_dev));
 
-	rc = add_mci_parameter(mci_dev);
-	if (rc != 0) {
+	mci->param_probe = dev_add_param_bool(mci_dev, "probe",
+			mci_set_probe, NULL, &mci->probe, mci);
+
+	if (IS_ERR(mci->param_probe)) {
 		dev_dbg(mci->mci_dev, "Failed to add 'probe' parameter to the MCI device\n");
 		goto on_error;
 	}

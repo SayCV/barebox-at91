@@ -129,7 +129,7 @@ static void auart_serial_flush(struct console_device *cdev)
 	struct auart_priv *priv = container_of(cdev, struct auart_priv, cdev);
 
 	/* Wait for TX FIFO empty */
-	while (readl(priv->base + HW_UARTAPP_STAT) & BM_UARTAPP_STAT_TXFE)
+	while (!(readl(priv->base + HW_UARTAPP_STAT) & BM_UARTAPP_STAT_TXFE))
 		;
 }
 
@@ -228,11 +228,4 @@ static struct driver_d auart_serial_driver = {
 	.probe = auart_serial_probe,
 	.remove = auart_serial_remove,
 };
-
-static int auart_serial_init(void)
-{
-	platform_driver_register(&auart_serial_driver);
-	return 0;
-}
-
-console_initcall(auart_serial_init);
+console_platform_driver(auart_serial_driver);

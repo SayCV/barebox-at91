@@ -112,7 +112,11 @@ static int mtd_op_erase(struct cdev *cdev, size_t count, loff_t offset)
 	while (count > 0) {
 		dev_dbg(cdev->dev, "erase %d %d\n", erase.addr, erase.len);
 
-		ret = mtd_block_isbad(mtd, erase.addr);
+		if (!mtd->allow_erasebad)
+			ret = mtd_block_isbad(mtd, erase.addr);
+		else
+			ret = 0;
+
 		if (ret > 0) {
 			printf("Skipping bad block at 0x%08x\n", erase.addr);
 		} else {
@@ -282,7 +286,6 @@ static struct file_operations mtd_ops = {
 
 int add_mtd_device(struct mtd_info *mtd, char *devname)
 {
-	char str[16];
 	struct mtddev_hook *hook;
 
 	if (!devname)
@@ -301,14 +304,10 @@ int add_mtd_device(struct mtd_info *mtd, char *devname)
 	mtd->cdev.mtd = mtd;
 
 	if (IS_ENABLED(CONFIG_PARAMETER)) {
-		sprintf(str, "%u", mtd->size);
-		dev_add_param_fixed(&mtd->class_dev, "size", str);
-		sprintf(str, "%u", mtd->erasesize);
-		dev_add_param_fixed(&mtd->class_dev, "erasesize", str);
-		sprintf(str, "%u", mtd->writesize);
-		dev_add_param_fixed(&mtd->class_dev, "writesize", str);
-		sprintf(str, "%u", mtd->oobsize);
-		dev_add_param_fixed(&mtd->class_dev, "oobsize", str);
+		dev_add_param_int_ro(&mtd->class_dev, "size", mtd->size, "%u");
+		dev_add_param_int_ro(&mtd->class_dev, "erasesize", mtd->erasesize, "%u");
+		dev_add_param_int_ro(&mtd->class_dev, "writesize", mtd->oobsize, "%u");
+		dev_add_param_int_ro(&mtd->class_dev, "oobsize", mtd->oobsize, "%u");
 	}
 
 	devfs_create(&mtd->cdev);

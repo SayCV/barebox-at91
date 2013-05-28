@@ -43,7 +43,7 @@
 #include <init.h>
 #include <errno.h>
 #include <io.h>
-#include <mach/board.h>
+#include <platform_data/macb.h>
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <asm/mmu.h>
@@ -172,7 +172,6 @@ static void reclaim_rx_buffers(struct macb_device *macb,
 static int gem_recv(struct eth_device *edev)
 {
 	struct macb_device *macb = edev->priv;
-	unsigned int rx_tail = macb->rx_tail;
 	void *buffer;
 	int length;
 	u32 status;
@@ -181,20 +180,20 @@ static int gem_recv(struct eth_device *edev)
 
 	for (;;) {
 		barrier();
-		if (!(macb->rx_ring[rx_tail].addr & MACB_BIT(RX_USED)))
+		if (!(macb->rx_ring[macb->rx_tail].addr & MACB_BIT(RX_USED)))
 			return -1;
 
 		barrier();
-		status = macb->rx_ring[rx_tail].ctrl;
+		status = macb->rx_ring[macb->rx_tail].ctrl;
 		length = MACB_BFEXT(RX_FRMLEN, status);
-		if (status & MACB_BIT(RX_SOF)) {
-			buffer = macb->rx_buffer + macb->rx_buffer_size * macb->rx_tail;
-			net_receive(buffer, length);
-			macb->rx_ring[rx_tail].ctrl &= ~MACB_BIT(RX_USED);
-			barrier();
-		}
-		rx_tail++;
+		buffer = macb->rx_buffer + macb->rx_buffer_size * macb->rx_tail;
+		net_receive(buffer, length);
+		macb->rx_ring[macb->rx_tail].addr &= ~MACB_BIT(RX_USED);
+		barrier();
+
 		macb->rx_tail++;
+		if (macb->rx_tail >= macb->rx_ring_size)
+			macb->rx_tail = 0;
 	}
 
 	return 0;
@@ -308,6 +307,7 @@ static void macb_configure_dma(struct macb_device *bp)
 		dmacfg |= GEM_BF(FBLDO, 16);
 		dmacfg |= GEM_BIT(TXPBMS) | GEM_BF(RXBMS, -1L);
 		dmacfg |= GEM_BIT(DDRP);
+		dmacfg &= ~GEM_BIT(ENDIA);
 		gem_writel(bp, DMACFG, dmacfg);
 	}
 }
@@ -585,7 +585,7 @@ static int macb_probe(struct device_d *dev)
 	struct eth_device *edev;
 	struct macb_device *macb;
 	u32 ncfgr;
-	struct at91_ether_platform_data *pdata;
+	struct macb_platform_data *pdata;
 
 	if (!dev->platform_data) {
 		dev_err(dev, "macb: no platform_data\n");
@@ -619,11 +619,6 @@ static int macb_probe(struct device_d *dev)
 
 	macb->phy_flags = pdata->phy_flags;
 
-	macb_init_rx_buffer_size(macb, PKTSIZE);
-	macb->rx_buffer = dma_alloc_coherent(macb->rx_buffer_size * macb->rx_ring_size);
-	macb->rx_ring = dma_alloc_coherent(RX_RING_BYTES(macb));
-	macb->tx_ring = dma_alloc_coherent(TX_RING_BYTES);
-
 	macb->regs = dev_request_mem_region(dev, 0);
 
 	/*
@@ -638,11 +633,17 @@ static int macb_probe(struct device_d *dev)
 
 	clk_enable(macb->pclk);
 
+	macb->is_gem = read_is_gem(macb);
+
 	if (macb_is_gem(macb))
 		edev->recv = gem_recv;
 	else
 		edev->recv = macb_recv;
-	macb->is_gem = read_is_gem(macb);
+
+	macb_init_rx_buffer_size(macb, PKTSIZE);
+	macb->rx_buffer = dma_alloc_coherent(macb->rx_buffer_size * macb->rx_ring_size);
+	macb->rx_ring = dma_alloc_coherent(RX_RING_BYTES(macb));
+	macb->tx_ring = dma_alloc_coherent(TX_RING_BYTES);
 
 	macb_reset_hw(macb);
 	ncfgr = macb_mdc_clk_div(macb);

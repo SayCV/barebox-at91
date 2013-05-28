@@ -77,7 +77,7 @@ static int imx51_init(void)
 postcore_initcall(imx51_init);
 
 /*
- * Saves the boot source media into the $barebox_loc environment variable
+ * Saves the boot source media into the $bootsource environment variable
  *
  * This information is useful for barebox init scripts as we can then easily
  * use a kernel image stored on the same media that we launch barebox with
@@ -151,7 +151,7 @@ void imx51_init_lowlevel(unsigned int cpufreq_mhz)
 	writel(0x19239145, ccm + MX5_CCM_CBCDR);
 	writel(0x000020C0, ccm + MX5_CCM_CBCMR);
 
-	imx51_setup_pll_216((void __iomem *)MX51_PLL3_BASE_ADDR);
+	imx5_setup_pll_216((void __iomem *)MX51_PLL3_BASE_ADDR);
 
 	/* Set the platform clock dividers */
 	writel(0x00000124, MX51_ARM_BASE_ADDR + 0x14);

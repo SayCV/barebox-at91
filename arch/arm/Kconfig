@@ -17,6 +17,14 @@ config HAVE_MACH_ARM_HEAD
 
 menu "System Type"
 
+config BUILTIN_DTB
+	bool "link a DTB into the barebox image"
+	depends on OFTREE
+
+config BUILTIN_DTB_NAME
+	string "DTB to build into the barebox image"
+	depends on BUILTIN_DTB
+
 choice
 	prompt "ARM system type"
 
@@ -39,7 +47,11 @@ config ARCH_BCM2835
 config ARCH_CLPS711X
 	bool "Cirrus Logic EP711x/EP721x/EP731x"
 	select CLKDEV_LOOKUP
+	select CLOCKSOURCE_CLPS711X
+	select COMMON_CLK
 	select CPU_32v4T
+	select GPIOLIB
+	select MFD_SYSCON
 
 config ARCH_EP93XX
 	bool "Cirrus Logic EP93xx"
@@ -124,8 +136,19 @@ config ARCH_VEXPRESS
 	select COMMON_CLK
 
 config ARCH_TEGRA
-	bool "Nvidia Tegra-based boards"
-	select CPU_ARM926T
+	bool "NVIDIA Tegra"
+	select CPU_V7
+	select HAS_DEBUG_LL
+	select BUILTIN_DTB
+	select COMMON_CLK
+	select CLKDEV_LOOKUP
+	select GPIOLIB
+	select GPIO_TEGRA
+	select OFDEVICE
+	select OFTREE
+
+config ARCH_ZYNQ
+	bool "Xilinx Zynq-based boards"
 	select HAS_DEBUG_LL
 
 endchoice
@@ -146,6 +169,7 @@ source arch/arm/mach-samsung/Kconfig
 source arch/arm/mach-versatile/Kconfig
 source arch/arm/mach-vexpress/Kconfig
 source arch/arm/mach-tegra/Kconfig
+source arch/arm/mach-zynq/Kconfig
 
 config ARM_ASM_UNIFIED
 	bool
