@@ -374,19 +374,21 @@ static int do_bootm_rtems(struct image_data *data)
 		printf("...\n");
 	}
 	
+	icache_disable();
+
 	architecture = armlinux_get_architecture();
 	//params = armlinux_bootparams;
 	
 	theKernel = (void (*)(int, int, void*))kernel;
 	//start_linux((void *)kernel, swap, initrd_start, initrd_size, data->oftree);
-	shutdown_barebox();
+	//shutdown_barebox();
 	
 	/*
 	 * RTEMS Parameters:
 	 *   r3: ptr to board info data
 	 */
 	//theKernel(0, architecture, params);
-	theKernel(0);
+	theKernel(barebox_arm_boarddata);
 	
 	reset_cpu(0);
 
