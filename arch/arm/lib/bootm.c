@@ -381,7 +381,6 @@ static int do_bootm_rtems(struct image_data *data)
 	
 	theKernel = (void (*)(int, int, void*))kernel;
 	//start_linux((void *)kernel, swap, initrd_start, initrd_size, data->oftree);
-	memset((unsigned int *)0x00300000, 0, 0x8000);
 	shutdown_barebox();
 	
 	/*
@@ -389,7 +388,7 @@ static int do_bootm_rtems(struct image_data *data)
 	 *   r3: ptr to board info data
 	 */
 	//theKernel(0, architecture, params);
-	theKernel((void *)barebox_arm_boarddata);
+	theKernel(barebox_arm_boarddata());
 	
 	reset_cpu(0);
 
