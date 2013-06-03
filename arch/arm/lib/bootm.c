@@ -321,7 +321,7 @@ static struct image_handler barebox_handler = {
 
 static int do_bootm_rtems(struct image_data *data)
 {
-#if 1
+#if 0
 	return __do_bootm_linux(data, 0);
 #else
 	unsigned long kernel;
@@ -381,14 +381,15 @@ static int do_bootm_rtems(struct image_data *data)
 	
 	theKernel = (void (*)(int, int, void*))kernel;
 	//start_linux((void *)kernel, swap, initrd_start, initrd_size, data->oftree);
-	//shutdown_barebox();
+	memset((unsigned int *)0x00300000, 0, 0x8000);
+	shutdown_barebox();
 	
 	/*
 	 * RTEMS Parameters:
 	 *   r3: ptr to board info data
 	 */
 	//theKernel(0, architecture, params);
-	theKernel(barebox_arm_boarddata);
+	theKernel((void *)barebox_arm_boarddata);
 	
 	reset_cpu(0);
 
