@@ -28,7 +28,7 @@ if [ -f /env/bin/boot_board ]; then
 elif [ -n $autoboot_timeout ]; then
 	echo
 	echo -n "Hit any key to stop autoboot: "
-	timeout -a $autoboot_timeout
+	timeout -r $autoboot_timeout
 	if [ $? != 0 ]; then
 		exit
 	fi
