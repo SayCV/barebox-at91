@@ -17,7 +17,7 @@ kernel_loc=nand
 # can be either 'net', 'nor', 'nand' or 'initrd'
 rootfs_loc=nand
 # can be either 'nfs', 'tftp', 'nand' or empty
-oftree_loc=
+oftree_loc=nand
 
 # can be either 'jffs2' or 'ubifs'
 rootfs_type=ubifs
