@@ -321,7 +321,7 @@ static struct image_handler barebox_handler = {
 
 static int do_bootm_rtems(struct image_data *data)
 {
-#if 1
+#if 0
 	return __do_bootm_linux(data, 0);
 #else
 	unsigned long kernel;
@@ -362,7 +362,7 @@ static int do_bootm_rtems(struct image_data *data)
 
 	kernel = data->os_res->start + data->os_entry;
 	
-	printf ("## Transferring control to RTEMS (at address %08lx) ...\n\r",
+	printf ("\n## Transferring control to SayOS (at address %08lx) ...\n\r",
 		(ulong)kernel);
 
 	if (bootm_verbose(data)) {
