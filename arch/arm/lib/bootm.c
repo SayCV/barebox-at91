@@ -321,7 +321,7 @@ static struct image_handler barebox_handler = {
 
 static int do_bootm_rtems(struct image_data *data)
 {
-#if 0
+#if 1
 	return __do_bootm_linux(data, 0);
 #else
 	unsigned long kernel;
