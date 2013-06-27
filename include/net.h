@@ -19,7 +19,9 @@
 #include <stdlib.h>
 #include <clock.h>
 #include <led.h>
+#include <xfuncs.h>
 #include <linux/phy.h>
+#include <linux/string.h>	/* memcpy */
 #include <asm/byteorder.h>	/* for nton* / ntoh* stuff */
 
 /* How often do we retry to send packages */
@@ -52,6 +54,12 @@ struct eth_device {
 	struct device_d *parent;
 
 	struct list_head list;
+
+	IPaddr_t ipaddr;
+	IPaddr_t serverip;
+	IPaddr_t netmask;
+	IPaddr_t gateway;
+	char ethaddr[6];
 };
 
 #define dev_to_edev(d) container_of(d, struct eth_device, dev)
@@ -70,8 +78,13 @@ int eth_rx(void);			/* Check for received packets	*/
 static inline void eth_register_ethaddr(int ethid, const char *ethaddr)
 {
 }
+static inline void of_eth_register_ethaddr(struct device_node *node,
+		const char *ethaddr)
+{
+}
 #else
 void eth_register_ethaddr(int ethid, const char *ethaddr);
+void of_eth_register_ethaddr(struct device_node *node, const char *ethaddr);
 #endif
 /*
  *	Ethernet header
@@ -384,7 +397,6 @@ typedef void rx_handler_f(void *ctx, char *packet, unsigned int len);
 void eth_set_current(struct eth_device *eth);
 struct eth_device *eth_get_current(void);
 struct eth_device *eth_get_byname(char *name);
-void net_update_env(void);
 
 /**
  * net_receive - Pass a received packet from an ethernet driver to the protocol stack

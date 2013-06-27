@@ -298,7 +298,7 @@ static int at91_ether_probe(struct device_d *dev)
 	struct mii_bus *miibus;
 	unsigned long ether_hz;
 	struct clk *pclk;
-	struct at91_ether_platform_data *pdata;
+	struct macb_platform_data *pdata;
 
 	if (!dev->platform_data) {
 		printf("at91_ether: no platform_data\n");
@@ -366,10 +366,4 @@ static struct driver_d at91_ether_driver = {
 	.probe = at91_ether_probe,
 	.remove = at91_ether_remove,
 };
-
-static int at91_ether_driver_init(void)
-{
-	platform_driver_register(&at91_ether_driver);
-	return 0;
-}
-device_initcall(at91_ether_driver_init);
+device_platform_driver(at91_ether_driver);

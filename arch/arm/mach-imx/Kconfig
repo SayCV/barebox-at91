@@ -17,9 +17,9 @@ config ARCH_TEXT_BASE
 	default 0x87f00000 if MACH_PCM043
 	default 0x08f80000 if MACH_SCB9328
 	default 0xa7e00000 if MACH_NESO
-	default 0x97f00000 if MACH_MX51_PDK
-	default 0x7ff00000 if MACH_MX53_LOCO
-	default 0x7ff00000 if MACH_MX53_SMD
+	default 0x97f00000 if MACH_FREESCALE_MX51_PDK
+	default 0x7ff00000 if MACH_FREESCALE_MX53_LOCO
+	default 0x7ff00000 if MACH_FREESCALE_MX53_SMD
 	default 0x87f00000 if MACH_GUF_CUPID
 	default 0x93d00000 if MACH_TX25
 	default 0x7ff00000 if MACH_TQMA53
@@ -30,6 +30,8 @@ config ARCH_TEXT_BASE
 	default 0x8fe00000 if MACH_TX53
 	default 0x7fc00000 if MACH_GUF_VINCELL
 	default 0x97f00000 if MACH_EFIKA_MX_SMARTBOOK
+	default 0x17800000 if MACH_SABRESD
+	default 0x4fc00000 if MACH_REALQ7
 
 config BOARDINFO
 	default "Eukrea CPUIMX25" if MACH_EUKREA_CPUIMX25
@@ -52,16 +54,19 @@ config BOARDINFO
 	default "Efika MX smartbook" if MACH_EFIKA_MX_SMARTBOOK
 	default "Garz+Fricke Cupid" if MACH_GUF_CUPID
 	default "Ka-Ro tx25" if MACH_TX25
-	default "TQ tqma53" if MACH_TQMA53
+	default "TQ TQMa53" if MACH_TQMA53
 	default "Ka-Ro tx51" if MACH_TX51
 	default "Freescale i.MX6q armadillo2" if MACH_MX6Q_ARM2
 	default "ConnectCore i.MX51" if MACH_CCMX51
 	default "Sabre Lite" if MACH_SABRELITE
 	default "Ka-Ro tx53" if MACH_TX53
 	default "Garz+Fricke Vincell" if MACH_GUF_VINCELL
+	default "SabreSD" if MACH_SABRESD
+	default "DataModul i.MX6Q Real Qseven" if MACH_REALQ7
 
 choice
 	prompt "Select boot mode"
+	depends on !ARCH_IMX_INTERNAL_BOOT_USE_IMXIMAGE
 	help
 	  i.MX processors support two different boot modes. With the internal
 	  boot mode the boot medium contains a header describing the image to
@@ -88,6 +93,21 @@ config ARCH_IMX_EXTERNAL_BOOT
 	depends on ARCH_IMX1 || ARCH_IMX21 || ARCH_IMX25 || ARCH_IMX27 || ARCH_IMX31 || ARCH_IMX35
 
 endchoice
+
+config ARCH_IMX_IMXIMAGE
+	bool
+	help
+	  if enabled the imx-image tool is compiled
+
+config ARCH_IMX_INTERNAL_BOOT_USE_IMXIMAGE
+	select ARCH_IMX_IMXIMAGE
+	bool
+	help
+	  Traditionally the i.MX specific format for internal bootmode
+	  was generated using C structs inside the binary. Now there is
+	  a tool available to generate the imx-image format. Boards using
+	  this tool must select this option. This is recommended for new
+	  boards.
 
 choice
 	depends on ARCH_IMX_INTERNAL_BOOT
@@ -147,6 +167,12 @@ config NAND_IMX_BOOT_512_2K
 
 endchoice
 
+config BAREBOX_UPDATE_IMX_EXTERNAL_NAND
+	bool
+	depends on ARCH_IMX_EXTERNAL_BOOT_NAND
+	depends on BAREBOX_UPDATE
+	default y
+
 comment "Freescale i.MX System-on-Chip"
 
 choice
@@ -155,44 +181,53 @@ choice
 config ARCH_IMX1
 	bool "i.MX1"
 	select CPU_ARM920T
+	select PINCTRL_IMX_IOMUX_V1
 
 config ARCH_IMX21
 	bool "i.MX21"
 	select CPU_ARM926T
+	select PINCTRL_IMX_IOMUX_V1
 
 config ARCH_IMX25
 	bool "i.MX25"
 	select CPU_ARM926T
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX27
 	bool "i.MX27"
 	select CPU_ARM926T
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V1
 
 config ARCH_IMX31
 	select CPU_V6
 	bool "i.MX31"
+	select PINCTRL_IMX_IOMUX_V2
 
 config ARCH_IMX35
 	bool "i.MX35"
 	select CPU_V6
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX51
 	bool "i.MX51"
 	select CPU_V7
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX53
 	bool "i.MX53"
 	select CPU_V7
 	select ARCH_HAS_FEC_IMX
+	select PINCTRL_IMX_IOMUX_V3
 
 config ARCH_IMX6
 	bool "i.MX6"
 	select ARCH_HAS_FEC_IMX
 	select CPU_V7
+	select PINCTRL_IMX_IOMUX_V3
 
 endchoice
 
@@ -247,7 +282,7 @@ config MACH_EUKREA_CPUIMX25
 config MACH_FREESCALE_MX25_3STACK
 	bool "Freescale MX25 3stack"
 	select I2C
-	select I2C_MC34704
+	select MFD_MC34704
 	help
 	  Say Y here if you are using the Freescale MX25 3stack board equipped
 	  with a Freescale i.MX25 Processor
@@ -289,6 +324,7 @@ config MACH_PCA100
 
 config MACH_PCM038
 	bool "phyCORE-i.MX27"
+	select IMX_IIM
 	select SPI
 	select DRIVER_SPI_IMX
 	select MFD_MC13XXX
@@ -354,7 +390,7 @@ config MACH_FREESCALE_MX35_3STACK
 	select I2C
 	select I2C_IMX
 	select MFD_MC13XXX
-	select I2C_MC9SDZ60
+	select MFD_MC9SDZ60
 	help
 	  Say Y here if you are using the Freescale MX35 3stack board equipped
 	  with a Freescale i.MX35 Processor
@@ -362,6 +398,7 @@ config MACH_FREESCALE_MX35_3STACK
 config MACH_PCM043
 	bool "phyCORE-i.MX35"
 	select ARCH_HAS_L2X0
+	select HAVE_DEFAULT_ENVIRONMENT_NEW
 	help
 	  Say Y here if you are using Phytec's phyCORE-i.MX35 (pcm043) equipped
 	  with a Freescale i.MX35 Processor
@@ -386,6 +423,7 @@ choice
 
 config MACH_FREESCALE_MX51_PDK
 	select HAVE_DEFAULT_ENVIRONMENT_NEW
+	select ARCH_IMX_INTERNAL_BOOT_USE_IMXIMAGE
 	bool "Freescale i.MX51 PDK"
 
 config MACH_EUKREA_CPUIMX51SD
@@ -443,13 +481,7 @@ config MACH_FREESCALE_MX53_SMD
 
 config MACH_TQMA53
 	select HAVE_DEFAULT_ENVIRONMENT_NEW
-	bool "TQ i.MX53 TQMA53"
-
-config MACH_TQMA53_1GB_RAM
-	bool "Use 1GiB of SDRAM"
-	depends on MACH_TQMA53
-	help
-	  use 1GiB of SDRAM (512MiB otherwise)
+	bool "TQ i.MX53 TQMa53"
 
 config MACH_TX53
 	bool "Ka-Ro TX53"
@@ -487,7 +519,15 @@ config MACH_MX6Q_ARM2
 	bool "Freescale i.MX6q Armadillo2"
 
 config MACH_SABRELITE
+	select HAVE_DEFAULT_ENVIRONMENT_NEW
 	bool "Freescale i.MX6 Sabre Lite"
+
+config MACH_SABRESD
+	bool "Freescale i.MX6 SabreSD"
+
+config MACH_REALQ7
+	bool "DataModul i.MX6Q Real Qseven Board"
+	select HAVE_DEFAULT_ENVIRONMENT_NEW
 
 endchoice
 
@@ -564,9 +604,26 @@ endchoice
 
 endif
 
+if MACH_TQMA53
+
+config MACH_TQMA53_1GB_RAM
+	bool "Use 1GiB of SDRAM"
+	depends on MACH_TQMA53
+	help
+	  use 1GiB of SDRAM (512MiB otherwise)
+
+endif
+
 endmenu
 
 menu "i.MX specific settings"
+
+config ARCH_IMX_USBLOADER
+	bool "compile imx-usb-loader"
+	help
+	  imx-usb-loader is a tool to upload and start imximages to an i.MX SoC
+	  in ROM boot mode. It requires libusb, so make sure you have the libusb
+	  devel package installed on your machine.
 
 config IMX_IIM
 	tristate "IIM fusebox device"

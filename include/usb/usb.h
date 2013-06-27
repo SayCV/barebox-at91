@@ -196,7 +196,6 @@ struct usb_driver {
 extern struct bus_type usb_bus_type;
 
 int usb_driver_register(struct usb_driver *);
-int usb_driver_unregister(struct usb_driver *);
 
 struct usb_host {
 	int (*init)(struct usb_host *);
@@ -270,7 +269,7 @@ void usb_rescan(void);
 #ifdef __LITTLE_ENDIAN
 # define swap_16(x) (x)
 # define swap_32(x) (x)
-#elif defined BIG_ENDIAN
+#elif defined __BIG_ENDIAN
 # define swap_16(x) __swap_16(x)
 # define swap_32(x) __swap_32(x)
 #else
@@ -520,4 +519,25 @@ struct usb_device_id {
 
 #endif /* DOXYGEN_SHOULD_SKIP_THIS */
 
+enum usb_dr_mode of_usb_get_dr_mode(struct device_node *np,
+		const char *propname);
+
+enum usb_dr_mode {
+	USB_DR_MODE_UNKNOWN,
+	USB_DR_MODE_HOST,
+	USB_DR_MODE_PERIPHERAL,
+	USB_DR_MODE_OTG,
+};
+
+enum usb_phy_interface of_usb_get_phy_mode(struct device_node *np,
+		const char *propname);
+
+enum usb_phy_interface {
+	USBPHY_INTERFACE_MODE_UNKNOWN,
+	USBPHY_INTERFACE_MODE_UTMI,
+	USBPHY_INTERFACE_MODE_UTMIW,
+	USBPHY_INTERFACE_MODE_ULPI,
+	USBPHY_INTERFACE_MODE_SERIAL,
+	USBPHY_INTERFACE_MODE_HSIC,
+};
 #endif /*_USB_H_ */

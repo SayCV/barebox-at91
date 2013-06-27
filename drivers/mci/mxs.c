@@ -37,129 +37,14 @@
 #include <clock.h>
 #include <io.h>
 #include <asm/bitops.h>
+#include <mach/mxs.h>
 #include <mach/imx-regs.h>
 #include <mach/mci.h>
 #include <mach/clock.h>
+#include <mach/ssp.h>
 
 #define CLOCKRATE_MIN (1 * 1000 * 1000)
 #define CLOCKRATE_MAX (480 * 1000 * 1000)
-
-#define HW_SSP_CTRL0 0x000
-# define SSP_CTRL0_SFTRST (1 << 31)
-# define SSP_CTRL0_CLKGATE (1 << 30)
-# define SSP_CTRL0_RUN (1 << 29)
-# define SSP_CTRL0_LOCK_CS (1 << 27)
-# define SSP_CTRL0_READ (1 << 25)
-# define SSP_CTRL0_IGNORE_CRC (1 << 26)
-# define SSP_CTRL0_DATA_XFER (1 << 24)
-# define SSP_CTRL0_BUS_WIDTH(x) (((x) & 0x3) << 22)
-# define SSP_CTRL0_WAIT_FOR_IRQ (1 << 21)
-# define SSP_CTRL0_LONG_RESP (1 << 19)
-# define SSP_CTRL0_GET_RESP (1 << 17)
-# define SSP_CTRL0_ENABLE (1 << 16)
-#ifdef CONFIG_ARCH_IMX23
-# define SSP_CTRL0_XFER_COUNT(x) ((x) & 0xffff)
-#endif
-
-#define HW_SSP_CMD0 0x010
-# define SSP_CMD0_SLOW_CLK (1 << 22)
-# define SSP_CMD0_CONT_CLK (1 << 21)
-# define SSP_CMD0_APPEND_8CYC (1 << 20)
-#ifdef CONFIG_ARCH_IMX23
-# define SSP_CMD0_BLOCK_SIZE(x) (((x) & 0xf) << 16)
-# define SSP_CMD0_BLOCK_COUNT(x) (((x) & 0xff) << 8)
-#endif
-# define SSP_CMD0_CMD(x) ((x) & 0xff)
-
-#define HW_SSP_CMD1 0x020
-
-#ifdef CONFIG_ARCH_IMX23
-# define HW_SSP_COMPREF 0x030
-# define HW_SSP_COMPMASK 0x040
-# define HW_SSP_TIMING 0x050
-# define HW_SSP_CTRL1 0x060
-# define HW_SSP_DATA 0x070
-#endif
-#ifdef CONFIG_ARCH_IMX28
-# define HW_SSP_XFER_COUNT 0x30
-# define HW_SSP_BLOCK_SIZE 0x40
-#  define SSP_BLOCK_SIZE(x) ((x) & 0xf)
-#  define SSP_BLOCK_COUNT(x) (((x) & 0xffffff) << 4)
-# define HW_SSP_COMPREF 0x050
-# define HW_SSP_COMPMASK 0x060
-# define HW_SSP_TIMING 0x070
-# define HW_SSP_CTRL1 0x080
-# define HW_SSP_DATA 0x090
-#endif
-/* bit definition for register HW_SSP_TIMING */
-# define SSP_TIMING_TIMEOUT_MASK (0xffff0000)
-# define SSP_TIMING_TIMEOUT(x) ((x) << 16)
-# define SSP_TIMING_CLOCK_DIVIDE(x) (((x) & 0xff) << 8)
-# define SSP_TIMING_CLOCK_RATE(x) ((x) & 0xff)
-
-/* bit definition for register HW_SSP_CTRL1 */
-# define SSP_CTRL1_POLARITY (1 << 9)
-# define SSP_CTRL1_WORD_LENGTH(x) (((x) & 0xf) << 4)
-# define SSP_CTRL1_SSP_MODE(x) ((x) & 0xf)
-
-#ifdef CONFIG_ARCH_IMX23
-# define HW_SSP_SDRESP0 0x080
-# define HW_SSP_SDRESP1 0x090
-# define HW_SSP_SDRESP2 0x0A0
-# define HW_SSP_SDRESP3 0x0B0
-#endif
-#ifdef CONFIG_ARCH_IMX28
-# define HW_SSP_SDRESP0 0x0A0
-# define HW_SSP_SDRESP1 0x0B0
-# define HW_SSP_SDRESP2 0x0C0
-# define HW_SSP_SDRESP3 0x0D0
-#endif
-
-#ifdef CONFIG_ARCH_IMX28
-# define HW_SSP_DDR_CTRL 0x0E0
-# define HW_SSP_DLL_CTRL 0x0F0
-#endif
-
-#ifdef CONFIG_ARCH_IMX23
-# define HW_SSP_STATUS 0x0C0
-#endif
-#ifdef CONFIG_ARCH_IMX28
-# define HW_SSP_STATUS 0x100
-#endif
-
-/* bit definition for register HW_SSP_STATUS */
-# define SSP_STATUS_PRESENT (1 << 31)
-# define SSP_STATUS_SD_PRESENT (1 << 29)
-# define SSP_STATUS_CARD_DETECT (1 << 28)
-# define SSP_STATUS_RESP_CRC_ERR (1 << 16)
-# define SSP_STATUS_RESP_ERR (1 << 15)
-# define SSP_STATUS_RESP_TIMEOUT (1 << 14)
-# define SSP_STATUS_DATA_CRC_ERR (1 << 13)
-# define SSP_STATUS_TIMEOUT (1 << 12)
-# define SSP_STATUS_FIFO_OVRFLW (1 << 9)
-# define SSP_STATUS_FIFO_FULL (1 << 8)
-# define SSP_STATUS_FIFO_EMPTY (1 << 5)
-# define SSP_STATUS_FIFO_UNDRFLW (1 << 4)
-# define SSP_STATUS_CMD_BUSY (1 << 3)
-# define SSP_STATUS_DATA_BUSY (1 << 2)
-# define SSP_STATUS_BUSY (1 << 0)
-# define SSP_STATUS_ERROR (SSP_STATUS_FIFO_OVRFLW | SSP_STATUS_FIFO_UNDRFLW | \
-	SSP_STATUS_RESP_CRC_ERR | SSP_STATUS_RESP_ERR | \
-	SSP_STATUS_RESP_TIMEOUT | SSP_STATUS_DATA_CRC_ERR | SSP_STATUS_TIMEOUT)
-
-#ifdef CONFIG_ARCH_IMX28
-# define HW_SSP_DLL_STS 0x110
-#endif
-
-#ifdef CONFIG_ARCH_IMX23
-# define HW_SSP_DEBUG 0x100
-# define HW_SSP_VERSION 0x110
-#endif
-
-#ifdef CONFIG_ARCH_IMX28
-# define HW_SSP_DEBUG 0x120
-# define HW_SSP_VERSION 0x130
-#endif
 
 struct mxs_mci_host {
 	struct mci_host	host;
@@ -170,7 +55,7 @@ struct mxs_mci_host {
 	unsigned	f_min;
 	unsigned	f_max;
 #endif
-	int		bus_width:2; /* 0 = 1 bit, 1 = 4 bit, 2 = 8 bit */
+	unsigned	bus_width:2; /* 0 = 1 bit, 1 = 4 bit, 2 = 8 bit */
 };
 
 #define to_mxs_mci(mxs) container_of(mxs, struct mxs_mci_host, host)
@@ -301,7 +186,7 @@ static int mxs_mci_read_data(struct mxs_mci_host *mxs_mci, void *buffer, unsigne
 	if (length == 0)
 		return 0;
 
-	return -EINVAL;
+	return -EIO;
 }
 
 
@@ -338,7 +223,7 @@ static int mxs_mci_write_data(struct mxs_mci_host *mxs_mci, const void *buffer, 
 	if (length == 0)
 		return 0;
 
-	return -EINVAL;
+	return -EIO;
 }
 
 /**
@@ -562,19 +447,6 @@ static unsigned mxs_mci_setup_clock_speed(struct mxs_mci_host *mxs_mci, unsigned
 	return ssp / div / rate;
 }
 
-/**
- * Reset the MCI engine (the hard way)
- * @param hw_dev Host interface instance
- *
- * This will reset everything in all registers of this unit! (FIXME)
- */
-static void mxs_mci_reset(struct mxs_mci_host *mxs_mci)
-{
-	writel(SSP_CTRL0_SFTRST, mxs_mci->regs + HW_SSP_CTRL0 + 8);
-	while (readl(mxs_mci->regs + HW_SSP_CTRL0) & SSP_CTRL0_SFTRST)
-		;
-}
-
 /* ------------------------- MCI API -------------------------------------- */
 
 /**
@@ -591,7 +463,7 @@ static int mxs_mci_initialize(struct mci_host *host, struct device_d *mci_dev)
 	writel(SSP_CTRL0_CLKGATE, mxs_mci->regs + HW_SSP_CTRL0 + 8);
 
 	/* reset the unit */
-	mxs_mci_reset(mxs_mci);
+	mxs_reset_block(mxs_mci->regs + HW_SSP_CTRL0, 0);
 
 	/* restore the last settings */
 	mxs_mci_setup_timeout(mxs_mci, 0xffff);
@@ -643,28 +515,27 @@ static void mxs_mci_set_ios(struct mci_host *host, struct mci_ios *ios)
 	switch (ios->bus_width) {
 	case MMC_BUS_WIDTH_8:
 		mxs_mci->bus_width = 2;
-		host->bus_width = 8;	/* 8 bit is possible */
+		pr_debug("IO settings: changing bus width to 8 bits\n");
 		break;
 	case MMC_BUS_WIDTH_4:
 		mxs_mci->bus_width = 1;
-		host->bus_width = 4;	/* 4 bit is possible */
+		pr_debug("IO settings: changing bus width to 4 bits\n");
 		break;
 	case MMC_BUS_WIDTH_1:
 		mxs_mci->bus_width = 0;
-		host->bus_width = 1;	/* 1 bit is possible */
+		pr_debug("IO settings: changing bus width to 1 bit\n");
 		break;
 	default:
+		pr_debug("IO settings: unsupported bus width!\n");
 		return;
 	}
 
 	mxs_mci->clock = mxs_mci_setup_clock_speed(mxs_mci, ios->clock);
-	pr_debug("IO settings: bus width=%d, frequency=%u Hz\n", host->bus_width,
-			mxs_mci->clock);
+	pr_debug("IO settings: frequency=%u Hz\n", mxs_mci->clock);
 }
 
 /* ----------------------------------------------------------------------- */
 
-#ifdef CONFIG_MCI_INFO
 const unsigned char bus_width[3] = { 1, 4, 8 };
 
 static void mxs_mci_info(struct device_d *hw_dev)
@@ -678,7 +549,6 @@ static void mxs_mci_info(struct device_d *hw_dev)
 	printf("  Bus width: %u bit\n", bus_width[mxs_mci->bus_width]);
 	printf("\n");
 }
-#endif
 
 static int mxs_mci_probe(struct device_d *hw_dev)
 {
@@ -745,10 +615,11 @@ static int mxs_mci_probe(struct device_d *hw_dev)
 			host->f_max, mxs_mci_get_unit_clock(mxs_mci) / 2 / 1);
 	}
 
-#ifdef CONFIG_MCI_INFO
-	mxs_mci->f_min = host->f_min;
-	mxs_mci->f_max = host->f_max;
-#endif
+	if (IS_ENABLED(CONFIG_MCI_INFO)) {
+		mxs_mci->f_min = host->f_min;
+		mxs_mci->f_max = host->f_max;
+		hw_dev->info = mxs_mci_info;
+	}
 
 	return mci_register(host);
 }
@@ -756,15 +627,5 @@ static int mxs_mci_probe(struct device_d *hw_dev)
 static struct driver_d mxs_mci_driver = {
         .name  = "mxs_mci",
         .probe = mxs_mci_probe,
-#ifdef CONFIG_MCI_INFO
-	.info = mxs_mci_info,
-#endif
 };
-
-static int mxs_mci_init_driver(void)
-{
-        platform_driver_register(&mxs_mci_driver);
-        return 0;
-}
-
-device_initcall(mxs_mci_init_driver);
+device_platform_driver(mxs_mci_driver);

@@ -335,6 +335,19 @@ static int b_addchr(o_string *o, int ch)
 	return 0;
 }
 
+static int b_addstr(o_string *o, const char *str)
+{
+	int ret;
+
+	while (*str) {
+		ret = b_addchr(o, *str++);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 static void b_reset(o_string *o)
 {
 	o->length = 0;
@@ -782,7 +795,8 @@ static int run_pipe_real(struct p_context *ctx, struct pipe *pi)
 
 	remove_quotes(globbuf.gl_pathc, globbuf.gl_pathv);
 
-	if (!strcmp(globbuf.gl_pathv[0], "getopt")) {
+	if (!strcmp(globbuf.gl_pathv[0], "getopt") &&
+			IS_ENABLED(CONFIG_HUSH_GETOPT)) {
 		ret = builtin_getopt(ctx, child, globbuf.gl_pathc, globbuf.gl_pathv);
 	} else if (!strcmp(globbuf.gl_pathv[0], "exit")) {
 		ret = builtin_exit(ctx, child, globbuf.gl_pathc, globbuf.gl_pathv);
@@ -1406,6 +1420,14 @@ static int handle_dollar(o_string *dest, struct p_context *ctx, struct in_str *i
 			}
 			b_addchr(dest, SPECIAL_VAR_SYMBOL);
 			break;
+		case '*':
+			for (i = 1; i < ctx->global_argc; i++) {
+				b_addstr(dest, ctx->global_argv[i]);
+				b_addchr(dest, ' ');
+			}
+
+			advance = 1;
+			break;
 		default:
 			b_addchr(dest, '$');
 		}
@@ -1937,7 +1959,7 @@ BAREBOX_CMD_START(getopt)
 BAREBOX_CMD_END
 #endif
 
-BAREBOX_MAGICVAR(PATH, "colon seperated list of pathes to search for executables");
+BAREBOX_MAGICVAR(PATH, "colon separated list of pathes to search for executables");
 #ifdef CONFIG_HUSH_FANCY_PROMPT
 BAREBOX_MAGICVAR(PS1, "hush prompt");
 #endif

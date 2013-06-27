@@ -95,8 +95,6 @@ struct clk *clk_get_sys(const char *dev_id, const char *con_id)
 	struct clk *clk;
 
 	clk = clk_find(dev_id, con_id);
-	if (clk && !__clk_get(clk))
-		clk = NULL;
 
 	return clk ? clk : ERR_PTR(-ENOENT);
 }
@@ -117,7 +115,6 @@ EXPORT_SYMBOL(clk_get);
 
 void clk_put(struct clk *clk)
 {
-	__clk_put(clk);
 }
 EXPORT_SYMBOL(clk_put);
 
@@ -185,7 +182,7 @@ int clk_register_clkdev(struct clk *clk, const char *con_id,
 	va_list ap;
 
 	if (IS_ERR(clk))
-                return PTR_ERR(clk);
+		return PTR_ERR(clk);
 
 	va_start(ap, dev_fmt);
 	cl = clkdev_alloc(clk, con_id, dev_fmt, ap);

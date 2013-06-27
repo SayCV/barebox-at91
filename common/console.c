@@ -99,33 +99,22 @@ static int console_std_set(struct device_d *dev, struct param_d *param,
 	return 0;
 }
 
-static int console_baudrate_set(struct device_d *dev, struct param_d *param,
-		const char *val)
+static int console_baudrate_set(struct param_d *param, void *priv)
 {
-	struct console_device *cdev = to_console_dev(dev);
-	int baudrate;
-	char baudstr[16];
+	struct console_device *cdev = priv;
 	unsigned char c;
-
-	if (!val)
-		dev_param_set_generic(dev, param, NULL);
-
-	baudrate = simple_strtoul(val, NULL, 10);
 
 	if (cdev->f_active) {
 		printf("## Switch baudrate to %d bps and press ENTER ...\n",
-			baudrate);
+			cdev->baudrate);
 		mdelay(50);
-		cdev->setbrg(cdev, baudrate);
+		cdev->setbrg(cdev, cdev->baudrate);
 		mdelay(50);
 		do {
 			c = getc();
 		} while (c != '\r' && c != '\n');
 	} else
-		cdev->setbrg(cdev, baudrate);
-
-	sprintf(baudstr, "%d", baudrate);
-	dev_param_set_generic(dev, param, baudstr);
+		cdev->setbrg(cdev, cdev->baudrate);
 
 	return 0;
 }
@@ -155,8 +144,9 @@ int console_register(struct console_device *newcdev)
 	platform_device_register(dev);
 
 	if (newcdev->setbrg) {
-		dev_add_param(dev, "baudrate", console_baudrate_set, NULL, 0);
-		dev_set_param(dev, "baudrate", __stringify(CONFIG_BAUDRATE));
+		newcdev->baudrate = CONFIG_BAUDRATE;
+		dev_add_param_int(dev, "baudrate", console_baudrate_set,
+			NULL, &newcdev->baudrate, "%u", newcdev);
 	}
 
 	dev_add_param(dev, "active", console_std_set, NULL, 0);
@@ -305,24 +295,6 @@ void console_putc(unsigned int ch, char c)
 }
 EXPORT_SYMBOL(console_putc);
 
-int fputc(int fd, char c)
-{
-	if(list_empty(&console_list)) {
-		if(!fd)
-			console_putc(0, c);
-		return 0;
-	}
-
-	if (fd == 1)
-		putchar(c);
-	else if (fd == 2)
-		eputc(c);
-	else
-		return write(fd, &c, 1);
-	return 0;
-}
-EXPORT_SYMBOL(fputc);
-
 int console_puts(unsigned int ch, const char *str)
 {
 	const char *s = str;
@@ -341,17 +313,6 @@ int console_puts(unsigned int ch, const char *str)
 }
 EXPORT_SYMBOL(console_puts);
 
-int fputs(int fd, const char *s)
-{
-	if (fd == 1)
-		return puts(s);
-	else if (fd == 2)
-		return eputs(s);
-	else
-		return write(fd, s, strlen(s));
-}
-EXPORT_SYMBOL(fputs);
-
 void console_flush(void)
 {
 	struct console_device *cdev;
@@ -362,62 +323,6 @@ void console_flush(void)
 	}
 }
 EXPORT_SYMBOL(console_flush);
-
-int fprintf(int file, const char *fmt, ...)
-{
-	va_list args;
-	char printbuffer[CFG_PBSIZE];
-
-	va_start (args, fmt);
-
-	/* For this to work, printbuffer must be larger than
-	 * anything we ever want to print.
-	 */
-	vsprintf (printbuffer, fmt, args);
-	va_end (args);
-
-	/* Print the string */
-	return fputs(file, printbuffer);
-}
-EXPORT_SYMBOL(fprintf);
-
-int printf (const char *fmt, ...)
-{
-	va_list args;
-	uint i;
-	char printbuffer[CFG_PBSIZE];
-
-	va_start (args, fmt);
-
-	/* For this to work, printbuffer must be larger than
-	 * anything we ever want to print.
-	 */
-	i = vsprintf (printbuffer, fmt, args);
-	va_end (args);
-
-	/* Print the string */
-	puts (printbuffer);
-
-	return i;
-}
-EXPORT_SYMBOL(printf);
-
-int vprintf (const char *fmt, va_list args)
-{
-	uint i;
-	char printbuffer[CFG_PBSIZE];
-
-	/* For this to work, printbuffer must be larger than
-	 * anything we ever want to print.
-	 */
-	i = vsprintf (printbuffer, fmt, args);
-
-	/* Print the string */
-	puts (printbuffer);
-
-	return i;
-}
-EXPORT_SYMBOL(vprintf);
 
 #ifndef ARCH_HAS_CTRLC
 /* test if ctrl-c was pressed */

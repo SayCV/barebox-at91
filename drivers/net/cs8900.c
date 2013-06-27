@@ -459,6 +459,8 @@ static int cs8900_probe(struct device_d *dev)
 	edev->set_ethaddr = cs8900_set_ethaddr;
 	edev->parent = dev;
 
+	dev->info = cs8900_info;
+
 	eth_register(edev);
 	return 0;
 }
@@ -466,13 +468,5 @@ static int cs8900_probe(struct device_d *dev)
 static struct driver_d cs8900_driver = {
 	.name = "cs8900",
 	.probe = cs8900_probe,
-	.info = cs8900_info,
 };
-
-static int cs8900_init(void)
-{
-	platform_driver_register(&cs8900_driver);
-	return 0;
-}
-
-device_initcall(cs8900_init);
+device_platform_driver(cs8900_driver);

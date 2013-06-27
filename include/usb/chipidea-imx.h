@@ -9,6 +9,7 @@
 #define MXC_EHCI_MODE_UTMI_16_BIT	((0 << 30) | (1 << 28))
 #define MXC_EHCI_MODE_PHILIPS		(1 << 30)
 #define MXC_EHCI_MODE_ULPI		(2 << 30)
+#define MXC_EHCI_MODE_HSIC		(1 << 25)
 #define MXC_EHCI_MODE_SERIAL		(3 << 30)
 
 /*
@@ -31,6 +32,8 @@
 #define MXC_EHCI_WAKEUP_ENABLED		(1 << 12)
 #define MXC_EHCI_ITC_NO_THRESHOLD	(1 << 13)
 
+#define MXC_EHCI_DISABLE_OVERCURRENT	(1 << 14)
+
 enum imx_usb_mode {
 	IMX_USB_MODE_HOST,
 	IMX_USB_MODE_DEVICE,
@@ -39,8 +42,10 @@ enum imx_usb_mode {
 struct imxusb_platformdata {
 	unsigned long flags;
 	enum imx_usb_mode mode;
+	int (*init)(int port);
 };
 
 int imx_usbmisc_port_init(int port, unsigned flags);
+int imx_usbmisc_port_post_init(int port, unsigned flags);
 
 #endif /* __USB_CHIPIDEA_IMX_H */

@@ -30,6 +30,15 @@
 #include "mmu-early.h"
 
 unsigned long arm_stack_top;
+static unsigned long barebox_boarddata;
+
+/*
+ * return the boarddata variable passed to barebox_arm_entry
+ */
+unsigned long barebox_arm_boarddata(void)
+{
+	return barebox_boarddata;
+}
 
 static noinline __noreturn void __start(uint32_t membase, uint32_t memsize,
 		uint32_t boarddata)
@@ -37,8 +46,14 @@ static noinline __noreturn void __start(uint32_t membase, uint32_t memsize,
 	unsigned long endmem = membase + memsize;
 	unsigned long malloc_start, malloc_end;
 
+	if (IS_ENABLED(CONFIG_RELOCATABLE)) {
+		unsigned long barebox_base = arm_barebox_image_place(endmem);
+		relocate_to_adr(barebox_base);
+	}
+
 	setup_c();
 
+	barebox_boarddata = boarddata;
 	arm_stack_top = endmem;
 	endmem -= STACK_SIZE; /* Stack */
 
@@ -108,6 +123,8 @@ void __naked __noreturn barebox_arm_entry(uint32_t membase, uint32_t memsize,
                 uint32_t boarddata)
 {
 	arm_setup_stack(membase + memsize - 16);
+
+	arm_early_mmu_cache_invalidate();
 
 	__start(membase, memsize, boarddata);
 }

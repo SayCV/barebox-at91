@@ -871,17 +871,22 @@ static int dataflash_probe(struct device_d *dev)
 	return status;
 }
 
+static __maybe_unused struct of_device_id dataflash_dt_ids[] = {
+	{
+		.compatible = "atmel,at45",
+	}, {
+		.compatible = "atmel,dataflash",
+	}, {
+		/* sentinel */
+	}
+};
+
 static struct driver_d dataflash_driver = {
 	.name  = "mtd_dataflash",
 	.probe = dataflash_probe,
+	.of_compatible = DRV_OF_COMPAT(dataflash_dt_ids),
 };
-
-static int dataflash_init(void)
-{
-	spi_register_driver(&dataflash_driver);
-	return 0;
-}
-device_initcall(dataflash_init);
+device_spi_driver(dataflash_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Andrew Victor, David Brownell");

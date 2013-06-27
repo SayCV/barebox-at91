@@ -31,6 +31,7 @@
 #include <fs.h>
 #include <linux/list.h>
 #include <complete.h>
+#include <pinctrl.h>
 
 LIST_HEAD(device_list);
 EXPORT_SYMBOL(device_list);
@@ -79,6 +80,8 @@ int device_probe(struct device_d *dev)
 {
 	int ret;
 
+	pinctrl_select_state_default(dev);
+
 	ret = dev->bus->probe(dev);
 	if (ret) {
 		dev_err(dev, "probe failed: %s\n", strerror(-ret));
@@ -88,6 +91,13 @@ int device_probe(struct device_d *dev)
 	list_add(&dev->active, &active);
 
 	return 0;
+}
+
+int device_detect(struct device_d *dev)
+{
+	if (!dev->detect)
+		return -ENOSYS;
+	return dev->detect(dev);
 }
 
 static int match(struct driver_d *drv, struct device_d *dev)
@@ -135,7 +145,7 @@ int register_device(struct device_d *new_device)
 
 	if (new_device->bus) {
 		if (!new_device->parent)
-			new_device->parent = &new_device->bus->dev;
+			new_device->parent = new_device->bus->dev;
 
 		list_add_tail(&new_device->bus_list, &new_device->bus->device_list);
 
@@ -198,15 +208,6 @@ struct driver_d *get_driver_by_name(const char *name)
 	return NULL;
 }
 
-static void noinfo(struct device_d *dev)
-{
-	printf("no info available for %s\n", dev_name(dev));
-}
-
-static void noshortinfo(struct device_d *dev)
-{
-}
-
 int register_driver(struct driver_d *drv)
 {
 	struct device_d *dev = NULL;
@@ -218,11 +219,6 @@ int register_driver(struct driver_d *drv)
 	list_add_tail(&drv->list, &driver_list);
 	list_add_tail(&drv->bus_list, &drv->bus->driver_list);
 
-	if (!drv->info)
-		drv->info = noinfo;
-	if (!drv->shortinfo)
-		drv->shortinfo = noshortinfo;
-
 	bus_for_each_device(drv->bus, dev)
 		match(drv, dev);
 
@@ -230,7 +226,7 @@ int register_driver(struct driver_d *drv)
 }
 EXPORT_SYMBOL(register_driver);
 
-static struct resource *dev_get_resource(struct device_d *dev, int num)
+struct resource *dev_get_resource(struct device_d *dev, int num)
 {
 	int i, n = 0;
 
@@ -486,14 +482,18 @@ static int do_devinfo(int argc, char *argv[])
 		printf("bus: %s\n\n", dev->bus ?
 				dev->bus->name : "none");
 
-		if (dev->driver)
-			dev->driver->info(dev);
+		if (dev->info)
+			dev->info(dev);
 
 		printf("%s\n", list_empty(&dev->parameters) ?
 				"no parameters available" : "Parameters:");
 
-		list_for_each_entry(param, &dev->parameters, list)
-			printf("%16s = %s\n", param->name, dev_get_param(dev, param->name));
+		list_for_each_entry(param, &dev->parameters, list) {
+			printf("%16s = %s", param->name, dev_get_param(dev, param->name));
+			if (param->info)
+				param->info(param);
+			printf("\n");
+		}
 #ifdef CONFIG_OFDEVICE
 		if (dev->device_node) {
 			printf("\ndevice node: %s\n", dev->device_node->full_name);

@@ -26,7 +26,7 @@
 #include <asm/barebox-arm.h>
 #include <asm/system.h>
 #include <asm-generic/memory_layout.h>
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 #include <asm/barebox-arm-head.h>
 
 #include "pll.h"
@@ -98,8 +98,6 @@ void __bare_init __naked barebox_arm_reset_vector(void)
 	arm_setup_stack(MX27_IRAM_BASE_ADDR + MX27_IRAM_SIZE - 8);
 
 	imx27_barebox_boot_nand_external();
-#else
-	imx27_barebox_entry(0);
 #endif
 out:
 	imx27_barebox_entry(0);

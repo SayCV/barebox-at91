@@ -1,3 +1,5 @@
+obj-$(CONFIG_DRIVER_NET_AR231X)		+= ar231x.o
+obj-$(CONFIG_DRIVER_NET_CALXEDA_XGMAC)	+= xgmac.o
 obj-$(CONFIG_DRIVER_NET_CS8900)		+= cs8900.o
 obj-$(CONFIG_DRIVER_NET_CPSW)		+= cpsw.o
 obj-$(CONFIG_DRIVER_NET_SMC911X)	+= smc911x.o

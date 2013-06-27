@@ -104,6 +104,13 @@ config OMAP4_USBBOOT
 	  You need the utility program omap4_usbboot to boot from USB.
 	  Please read omap4_usb_booting.txt for more information.
 
+config CMD_BOOT_ORDER
+	tristate
+	depends on ARCH_OMAP4
+	prompt "boot_order"
+	help
+	  A command to choose the next boot device on a warm reset.
+
 config BOARDINFO
 	default "Archos G9" if MACH_ARCHOSG9
 	default "Texas Instrument's SDP343x" if MACH_OMAP343xSDP
@@ -134,7 +141,6 @@ config MACH_BEAGLE
 
 config MACH_BEAGLEBONE
 	bool "Texas Instrument's Beagle Bone"
-	select OMAP_CLOCK_ALL
 	depends on ARCH_AM33XX
 	  help
 	  Say Y here if you are using Beagle Bone
@@ -179,7 +185,6 @@ config MACH_PCAAXL2
 
 config MACH_PCM051
 	bool "Phytec phyCORE pcm051"
-	select OMAP_CLOCK_ALL
 	select HAVE_DEFAULT_ENVIRONMENT_NEW
 	depends on ARCH_AM33XX
 	help
@@ -187,25 +192,38 @@ config MACH_PCM051
 
 endchoice
 
-if MACH_OMAP3EVM
+if ARCH_OMAP
 
 choice
 	prompt "Select UART"
+	default OMAP_UART3
 
-	config OMAP3EVM_UART1
+	config OMAP_UART1
 		bool "Use UART1"
-		depends on MACH_OMAP3EVM
+		depends on ARCH_OMAP
 		help
 		  Say Y here if you would like to use UART1 as console.
 
-	config OMAP3EVM_UART3
+	config OMAP_UART3
 		bool "Use UART3"
-		depends on MACH_OMAP3EVM
+		depends on ARCH_OMAP
 		help
 		  Say Y here if you would like to use UART3 as console.
 
 endchoice
 
+endif
+
+if MACH_PCM049
+	choice
+	prompt "Select DDR2-RAM Size"
+
+	config 512MB_DDR2RAM
+		bool "512MB"
+	config 1024MB_DDR2RAM
+		bool "1024MB"
+
+	endchoice
 endif
 
 config MACH_OMAP_ADVANCED_MUX

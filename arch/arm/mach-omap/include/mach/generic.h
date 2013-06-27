@@ -1,3 +1,5 @@
+#ifndef _MACH_GENERIC_H
+#define _MACH_GENERIC_H
 
 /* I2C controller revisions */
 #define OMAP_I2C_REV_2			0x20
@@ -23,4 +25,6 @@
 #define cpu_is_omap4xxx()	(1)
 #else
 #define cpu_is_omap4xxx()	(0)
+#endif
+
 #endif

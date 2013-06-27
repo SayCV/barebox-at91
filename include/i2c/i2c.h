@@ -16,6 +16,9 @@
 #ifndef I2C_I2C_H
 #define I2C_I2C_H
 
+#include <driver.h>
+#include <linux/types.h>
+
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 
 /*
@@ -102,6 +105,7 @@ struct i2c_board_info {
 	char		type[I2C_NAME_SIZE];	/**< name of device */
 	unsigned short	addr;			/**< stored in i2c_client.addr */
 	void		*platform_data;		/**< platform data for device */
+	struct device_node *of_node;
 };
 
 /**
@@ -151,7 +155,7 @@ extern int i2c_write_reg(struct i2c_client *client, u32 addr, const u8 *buf, u16
 
 extern struct bus_type i2c_bus;
 
-static inline int i2c_register_driver(struct driver_d *drv)
+static inline int i2c_driver_register(struct driver_d *drv)
 {
 	drv->bus = &i2c_bus;
 	return register_driver(drv);

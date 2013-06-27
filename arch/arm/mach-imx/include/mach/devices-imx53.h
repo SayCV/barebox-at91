@@ -1,5 +1,6 @@
 
 #include <mach/devices.h>
+#include <mach/imx53-regs.h>
 
 static inline struct device_d *imx53_add_spi0(struct spi_imx_master *pdata)
 {
@@ -19,6 +20,11 @@ static inline struct device_d *imx53_add_i2c0(struct i2c_platform_data *pdata)
 static inline struct device_d *imx53_add_i2c1(struct i2c_platform_data *pdata)
 {
 	return imx_add_i2c((void *)MX53_I2C2_BASE_ADDR, 1, pdata);
+}
+
+static inline struct device_d *imx53_add_i2c2(struct i2c_platform_data *pdata)
+{
+       return imx_add_i2c((void *)MX53_I2C3_BASE_ADDR, 2, pdata);
 }
 
 static inline struct device_d *imx53_add_uart0(void)

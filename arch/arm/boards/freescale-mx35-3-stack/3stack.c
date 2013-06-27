@@ -34,7 +34,7 @@
 #include <partition.h>
 
 #include <asm/armlinux.h>
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 #include <asm/barebox-arm.h>
 #include <io.h>
 #include <generated/mach-types.h>
@@ -60,7 +60,7 @@
 #define MX35PDK_BOARD_REV_2		1
 
 static struct fec_platform_data fec_info = {
-	.xcv_type	= MII100,
+	.xcv_type	= PHY_INTERFACE_MODE_MII,
 	.phy_addr	= 0x1F,
 };
 

@@ -3,6 +3,7 @@
 
 #include <ioctl.h>
 #include <param.h>
+#include <driver.h>
 
 #define FB_VISUAL_TRUECOLOR		2	/* True color	*/
 #define FB_VISUAL_PSEUDOCOLOR		3	/* Pseudo color (like atari) */
@@ -102,6 +103,7 @@ struct fb_info {
 	struct fb_bitfield transp;	/* transparency			*/
 
 	int enabled;
+	int p_enable;
 };
 
 int register_framebuffer(struct fb_info *info);

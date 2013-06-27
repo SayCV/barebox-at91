@@ -25,7 +25,7 @@
 #include <mach/imx25-regs.h>
 #include <asm/armlinux.h>
 #include <asm/barebox-arm.h>
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 #include <mach/gpio.h>
 #include <io.h>
 #include <asm/mmu.h>
@@ -47,7 +47,7 @@
 #include <asm/barebox-arm-head.h>
 
 static struct fec_platform_data fec_info = {
-	.xcv_type	= RMII,
+	.xcv_type	= PHY_INTERFACE_MODE_RMII,
 	.phy_addr	= 0,
 };
 

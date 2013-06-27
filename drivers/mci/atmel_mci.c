@@ -262,10 +262,12 @@ static int atmci_read_response(struct atmel_mci *host, unsigned int stat)
 {
 	struct mci_cmd *cmd = host->cmd;
 	int i;
-	u32 *resp = (u32 *)cmd->response;
+	u32 *resp;
 
 	if (!cmd)
 		return 0;
+
+	resp = (u32 *)cmd->response;
 
 	if (stat & (ATMCI_RTOE | ATMCI_DTOE)) {
 		dev_err(host->hw_dev, "command/data timeout\n");
@@ -468,7 +470,6 @@ static int atmci_request(struct mci_host *mci, struct mci_cmd *cmd, struct mci_d
 	return atmci_cmd_done(host, stat);
 }
 
-#ifdef CONFIG_MCI_INFO
 static void atmci_info(struct device_d *mci_dev)
 {
 	struct atmel_mci *host = mci_dev->priv;
@@ -491,7 +492,6 @@ static void atmci_info(struct device_d *mci_dev)
 		gpio_is_valid(pd->detect_pin) ? "yes" : "no");
 
 }
-#endif /* CONFIG_MCI_INFO */
 /*
  * HSMCI (High Speed MCI) module is not fully compatible with MCI module.
  * HSMCI provides DMA support and a new config register but no more supports
@@ -601,6 +601,9 @@ static int atmci_probe(struct device_d *hw_dev)
 	else
 		host->sdc_reg = ATMCI_SDCSEL_SLOT_A;
 
+	if (IS_ENABLED(CONFIG_MCI_INFO))
+		hw_dev->info = atmci_info;
+
 	mci_register(&host->mci);
 
 	return 0;
@@ -615,14 +618,5 @@ err_gpio_cd_request:
 static struct driver_d atmci_driver = {
 	.name	= "atmel_mci",
 	.probe	= atmci_probe,
-#ifdef CONFIG_MCI_INFO
-	.info	= atmci_info,
-#endif
 };
-
-static int atmci_init_driver(void)
-{
-	platform_driver_register(&atmci_driver);
-	return 0;
-}
-device_initcall(atmci_init_driver);
+device_platform_driver(atmci_driver);

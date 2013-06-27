@@ -2,7 +2,7 @@
  *  This is a driver for the SDHC controller found in Freescale MX2/MX3
  *  SoCs. It is basically the same hardware as found on MX1 (imxmmc.c).
  *  Unlike the hardware found on MX1, this hardware just works and does
- *  not need all the quirks found in imxmmc.c, hence the seperate driver.
+ *  not need all the quirks found in imxmmc.c, hence the separate driver.
  *
  *  Copyright (C) 2009 Ilya Yanok, <yanok@emcraft.com>
  *  Copyright (C) 2008 Sascha Hauer, Pengutronix <s.hauer@pengutronix.de>
@@ -27,7 +27,6 @@
 #include <driver.h>
 #include <linux/clk.h>
 #include <linux/err.h>
-#include <mach/clock.h>
 #include <io.h>
 
 #define DRIVER_NAME "imx-mmc"
@@ -226,11 +225,12 @@ static int mxcmci_read_response(struct mxcmci_host *host, unsigned int stat)
 {
 	struct mci_cmd *cmd = host->cmd;
 	int i;
-	u32 a, b, c;
-	u32 *resp = (u32 *)cmd->response;
+	u32 a, b, c, *resp;
 
 	if (!cmd)
 		return 0;
+
+	resp = (u32 *)cmd->response;
 
 	if (stat & STATUS_TIME_OUT_RESP) {
 		printf("CMD TIMEOUT\n");
@@ -524,12 +524,4 @@ static struct driver_d mxcmci_driver = {
         .name  = DRIVER_NAME,
         .probe = mxcmci_probe,
 };
-
-static int mxcmci_init_driver(void)
-{
-        platform_driver_register(&mxcmci_driver);
-        return 0;
-}
-
-device_initcall(mxcmci_init_driver);
-
+device_platform_driver(mxcmci_driver);

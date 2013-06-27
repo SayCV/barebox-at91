@@ -16,11 +16,13 @@
 #define pr_fmt(fmt) "pcm038: " fmt
 
 #include <common.h>
+#include <bootsource.h>
 #include <net.h>
 #include <init.h>
 #include <environment.h>
 #include <mach/imx27-regs.h>
 #include <fec.h>
+#include <sizes.h>
 #include <notifier.h>
 #include <mach/gpio.h>
 #include <asm/armlinux.h>
@@ -44,12 +46,22 @@
 
 #include "pll.h"
 
+#define PCM038_GPIO_FEC_RST	(GPIO_PORTC + 30)
+#define PCM038_GPIO_SPI_CS0	(GPIO_PORTD + 28)
+#define PCM970_GPIO_SPI_CS1	(GPIO_PORTD + 27)
+#define PCM038_GPIO_OTG_STP	(GPIO_PORTE + 1)
+
 static struct fec_platform_data fec_info = {
-	.xcv_type = MII100,
+	.xcv_type = PHY_INTERFACE_MODE_MII,
 	.phy_addr = 1,
 };
 
-static int pcm038_spi_cs[] = {GPIO_PORTD + 28};
+static int pcm038_spi_cs[] = {
+	PCM038_GPIO_SPI_CS0,
+#ifdef CONFIG_MACH_PCM970_BASEBOARD
+	PCM970_GPIO_SPI_CS1,
+#endif
+};
 
 static struct spi_imx_master pcm038_spi_0_data = {
 	.chipselect = pcm038_spi_cs,
@@ -181,13 +193,20 @@ static int pcm038_power_init(void)
 	return 0;
 }
 
+struct imxusb_platformdata pcm038_otg_pdata = {
+	.mode	= IMX_USB_MODE_DEVICE,
+	.flags	= MXC_EHCI_MODE_ULPI | MXC_EHCI_INTERFACE_DIFF_UNI,
+};
+
 static int pcm038_devices_init(void)
 {
 	int i;
 	u64 uid = 0;
 	char *envdev;
+	long sram_size;
 
 	unsigned int mode[] = {
+		/* FEC */
 		PD0_AIN_FEC_TXD0,
 		PD1_AIN_FEC_TXD1,
 		PD2_AIN_FEC_TXD2,
@@ -206,16 +225,22 @@ static int pcm038_devices_init(void)
 		PD15_AOUT_FEC_COL,
 		PD16_AIN_FEC_TX_ER,
 		PF23_AIN_FEC_TX_EN,
+		PCM038_GPIO_FEC_RST | GPIO_GPIO | GPIO_OUT,
+		/* UART1 */
 		PE12_PF_UART1_TXD,
 		PE13_PF_UART1_RXD,
 		PE14_PF_UART1_CTS,
 		PE15_PF_UART1_RTS,
+		/* CSPI1 */
 		PD25_PF_CSPI1_RDY,
-		GPIO_PORTD | 28 | GPIO_GPIO | GPIO_OUT,
 		PD29_PF_CSPI1_SCLK,
 		PD30_PF_CSPI1_MISO,
 		PD31_PF_CSPI1_MOSI,
-		/* display */
+		PCM038_GPIO_SPI_CS0 | GPIO_GPIO | GPIO_OUT,
+#ifdef CONFIG_MACH_PCM970_BASEBOARD
+		PCM970_GPIO_SPI_CS1 | GPIO_GPIO | GPIO_OUT,
+#endif
+		/* Display */
 		PA5_PF_LSCLK,
 		PA6_PF_LD0,
 		PA7_PF_LD1,
@@ -243,7 +268,7 @@ static int pcm038_devices_init(void)
 		PA29_PF_VSYNC,
 		PA30_PF_CONTRAST,
 		PA31_PF_OE_ACD,
-		/* OTG host */
+		/* USB OTG */
 		PC7_PF_USBOTG_DATA5,
 		PC8_PF_USBOTG_DATA6,
 		PC9_PF_USBOTG_DATA0,
@@ -252,7 +277,7 @@ static int pcm038_devices_init(void)
 		PC12_PF_USBOTG_DATA4,
 		PC13_PF_USBOTG_DATA3,
 		PE0_PF_USBOTG_NXT,
-		PE1_PF_USBOTG_STP,
+		PCM038_GPIO_OTG_STP | GPIO_GPIO | GPIO_OUT,
 		PE2_PF_USBOTG_DIR,
 		PE24_PF_USBOTG_CLK,
 		PE25_PF_USBOTG_DATA7,
@@ -270,9 +295,11 @@ static int pcm038_devices_init(void)
 	/* configure SRAM on cs1 */
 	imx27_setup_weimcs(1, 0x0000d843, 0x22252521, 0x22220a00);
 
-	/* Can be up to 2MiB */
-	add_mem_device("ram1", 0xc8000000, 512 * 1024,
-				   IORESOURCE_MEM_WRITEABLE);
+	/* SRAM can be up to 2MiB */
+	sram_size = get_ram_size((ulong *)MX27_CS1_BASE_ADDR, SZ_2M);
+	if (sram_size)
+		add_mem_device("ram1", MX27_CS1_BASE_ADDR, sram_size,
+			       IORESOURCE_MEM_WRITEABLE);
 
 	/* initizalize gpios */
 	for (i = 0; i < ARRAY_SIZE(mode); i++)
@@ -293,32 +320,38 @@ static int pcm038_devices_init(void)
 	/* Register the fec device after the PLL re-initialisation
 	 * as the fec depends on the (now higher) ipg clock
 	 */
+	gpio_set_value(PCM038_GPIO_FEC_RST, 1);
 	imx27_add_fec(&fec_info);
 
-	switch (imx_bootsource()) {
-	case bootsource_nand:
-		devfs_add_partition("nand0", 0x00000, 0x80000,
-					DEVFS_PARTITION_FIXED, "self_raw");
-		dev_add_bb_dev("self_raw", "self0");
+	/* Apply delay for STP line to stop ULPI */
+	gpio_direction_output(PCM038_GPIO_OTG_STP, 1);
+	mdelay(1);
+	imx_gpio_mode(PE1_PF_USBOTG_STP);
 
-		devfs_add_partition("nand0", 0x80000, 0x100000,
-					DEVFS_PARTITION_FIXED, "env_raw");
+	imx27_add_usbotg(&pcm038_otg_pdata);
+
+	switch (bootsource_get()) {
+	case BOOTSOURCE_NAND:
+		devfs_add_partition("nand0", 0, SZ_512K,
+				    DEVFS_PARTITION_FIXED, "self_raw");
+		dev_add_bb_dev("self_raw", "self0");
+		devfs_add_partition("nand0", SZ_512K, SZ_128K,
+				    DEVFS_PARTITION_FIXED, "env_raw");
 		dev_add_bb_dev("env_raw", "env0");
 		envdev = "NAND";
 		break;
 	default:
-		devfs_add_partition("nor0", 0x00000, 0x80000,
-					DEVFS_PARTITION_FIXED, "self0");
-		devfs_add_partition("nor0", 0x80000, 0x100000,
-					DEVFS_PARTITION_FIXED, "env0");
+		devfs_add_partition("nor0", 0, SZ_512K,
+				    DEVFS_PARTITION_FIXED, "self0");
+		devfs_add_partition("nor0", SZ_512K, SZ_128K,
+				    DEVFS_PARTITION_FIXED, "env0");
 		protect_file("/dev/env0", 1);
-
 		envdev = "NOR";
 	}
 
 	pr_notice("Using environment in %s Flash\n", envdev);
 
-	if (imx_iim_read(1, 1, &uid, 6) == 6)
+	if (imx_iim_read(1, 0, &uid, 6) == 6)
 		armlinux_set_serial(uid);
 	armlinux_set_bootparams((void *)0xa0000100);
 	armlinux_set_architecture(MACH_TYPE_PCM038);

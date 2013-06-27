@@ -106,7 +106,14 @@ struct device_d {
 	struct platform_device_id *id_entry;
 	struct device_node *device_node;
 
-	struct of_device_id *of_id_entry;
+	const struct of_device_id *of_id_entry;
+
+	void    (*info) (struct device_d *);
+	/*
+	 * For devices which take longer to probe this is called
+	 * when the driver should actually detect client devices
+	 */
+	int     (*detect) (struct device_d *);
 };
 
 /** @brief Describes a driver present in the system */
@@ -123,9 +130,6 @@ struct driver_d {
 
 	/*! Called if an instance of a device is gone. */
 	void     (*remove)(struct device_d *);
-
-	void    (*info) (struct device_d *);
-	void    (*shortinfo) (struct device_d *);
 
 	struct bus_type *bus;
 
@@ -152,6 +156,9 @@ int register_device(struct device_d *);
  * the driver need to be specified
  */
 int device_probe(struct device_d *dev);
+
+/* detect devices attached to this device (cards, disks,...) */
+int device_detect(struct device_d *dev);
 
 /* Unregister a device. This function can fail, e.g. when the device
  * has children.
@@ -192,6 +199,10 @@ static inline const char *dev_name(const struct device_d *dev)
 	return dev_id(dev);
 }
 
+/*
+ * get resource 'num' for a device
+ */
+struct resource *dev_get_resource(struct device_d *dev, int num);
 /*
  * get resource base 'name' for a device
  */
@@ -364,7 +375,7 @@ struct bus_type {
 	int (*probe)(struct device_d *dev);
 	void (*remove)(struct device_d *dev);
 
-	struct device_d dev;
+	struct device_d *dev;
 
 	struct list_head list;
 	struct list_head device_list;
@@ -390,6 +401,23 @@ extern struct list_head bus_list;
 extern struct bus_type platform_bus;
 
 int platform_driver_register(struct driver_d *drv);
+
+/* register_driver_macro() - Helper macro for drivers that don't do
+ * anything special in module registration. This eliminates a lot of
+ * boilerplate. Each module may only use this macro once.
+ */
+#define register_driver_macro(level,bus,drv)		\
+	static int __init drv##_register(void)		\
+	{						\
+		return bus##_driver_register(&drv);	\
+	}						\
+	level##_initcall(drv##_register)
+
+#define device_platform_driver(drv)	\
+	register_driver_macro(device,platform,drv)
+#define console_platform_driver(drv)	\
+	register_driver_macro(console,platform,drv)
+
 int platform_device_register(struct device_d *new_device);
 
 struct file_operations {

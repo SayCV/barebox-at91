@@ -303,17 +303,65 @@ config CMD_IOMEM
 config CMD_MEMORY
 	bool
 	default y
-	prompt "md and mw"
+
+config CMD_MD
+	tristate
+	default y
+	select CMD_MEMORY
+	prompt "md"
+	help
+	  the md command allows to display (hexdump) memory locations and files.
+
+config CMD_MW
+	tristate
+	default y
+	select CMD_MEMORY
+	prompt "mw"
+	help
+	  the mw command allows to write to memory locations and files.
+
+config CMD_MM
+	tristate
+	select CMD_MEMORY
+	prompt "memory modify (mm)"
+	help
+	  the mm command allows to read-modify-write registers by doing:
+	  reg = (reg & ~mask) | (val & mask)
+
+config CMD_MEMCMP
+	tristate
+	default y
+	select CMD_MEMORY
+	prompt "memcmp"
+	help
+	  the memcmp command allows to compare memory and file regions.
+
+config CMD_MEMCPY
+	tristate
+	default y
+	select CMD_MEMORY
+	prompt "memcpy"
+	help
+	  the memcpy command allows to copy memory and file regions.
+
+config CMD_MEMSET
+	tristate
+	default y
+	select CMD_MEMORY
+	prompt "memset"
+	help
+	  the memset command allows to set regions of memory and files to
+	  a specific value.
 
 config CMD_CRC
 	tristate
 	select CRC32
-	prompt "crc"
+	prompt "crc32"
 
 config CMD_CRC_CMP
 	tristate
 	depends on CMD_CRC
-	prompt "compare 2 files crc"
+	prompt "compare 2 files using crc32"
 
 config CMD_DIGEST
 	tristate
@@ -481,23 +529,14 @@ config CMD_GO
 config CMD_OFTREE
 	tristate
 	select OFTREE
-	select OFDEVICE
 	prompt "oftree"
 	help
 	  The oftree command has support for dumping devicetrees and, if
 	  enabled, to probe devices from the devicetree
 
-config CMD_OFTREE_PROBE
-	bool
-	depends on CMD_OFTREE
-	prompt "oftree probe support"
-	help
-	  This enables the -p option to probe devices from the devicetree
-
 config CMD_OF_PROPERTY
 	tristate
 	select OFTREE
-	select OFDEVICE
 	prompt "of_property"
 	help
 	  The of_property command allows setting and deleting of properties in
@@ -506,7 +545,6 @@ config CMD_OF_PROPERTY
 config CMD_OF_NODE
 	tristate
 	select OFTREE
-	select OFDEVICE
 	prompt "of_node"
 	help
 	  The of_property command allows adding and removing devicetree nodes.
@@ -689,6 +727,15 @@ config CMD_CLK
 	help
 	  Say yes here to get clk_set_rate, clk_set_parent and clk_dump
 	  commands to manipulate clocks on your system.
+
+config CMD_DETECT
+	tristate
+	prompt "detect"
+	help
+	  say yes here to get the 'detect' command. Some devices take longer
+	  time to probe, like slow disks or SD/MMC cards. These can defer the
+	  actual probe of the client devices until they are needed. Use the
+	  'detect' command on the physical device to trigger probing.
 
 menuconfig CMD_WD
 	bool
