@@ -54,7 +54,7 @@ config BOARDINFO
 	default "Efika MX smartbook" if MACH_EFIKA_MX_SMARTBOOK
 	default "Garz+Fricke Cupid" if MACH_GUF_CUPID
 	default "Ka-Ro tx25" if MACH_TX25
-	default "TQ tqma53" if MACH_TQMA53
+	default "TQ TQMa53" if MACH_TQMA53
 	default "Ka-Ro tx51" if MACH_TX51
 	default "Freescale i.MX6q armadillo2" if MACH_MX6Q_ARM2
 	default "ConnectCore i.MX51" if MACH_CCMX51
@@ -66,6 +66,7 @@ config BOARDINFO
 
 choice
 	prompt "Select boot mode"
+	depends on !ARCH_IMX_INTERNAL_BOOT_USE_IMXIMAGE
 	help
 	  i.MX processors support two different boot modes. With the internal
 	  boot mode the boot medium contains a header describing the image to
@@ -92,6 +93,21 @@ config ARCH_IMX_EXTERNAL_BOOT
 	depends on ARCH_IMX1 || ARCH_IMX21 || ARCH_IMX25 || ARCH_IMX27 || ARCH_IMX31 || ARCH_IMX35
 
 endchoice
+
+config ARCH_IMX_IMXIMAGE
+	bool
+	help
+	  if enabled the imx-image tool is compiled
+
+config ARCH_IMX_INTERNAL_BOOT_USE_IMXIMAGE
+	select ARCH_IMX_IMXIMAGE
+	bool
+	help
+	  Traditionally the i.MX specific format for internal bootmode
+	  was generated using C structs inside the binary. Now there is
+	  a tool available to generate the imx-image format. Boards using
+	  this tool must select this option. This is recommended for new
+	  boards.
 
 choice
 	depends on ARCH_IMX_INTERNAL_BOOT
@@ -407,6 +423,7 @@ choice
 
 config MACH_FREESCALE_MX51_PDK
 	select HAVE_DEFAULT_ENVIRONMENT_NEW
+	select ARCH_IMX_INTERNAL_BOOT_USE_IMXIMAGE
 	bool "Freescale i.MX51 PDK"
 
 config MACH_EUKREA_CPUIMX51SD
@@ -464,13 +481,7 @@ config MACH_FREESCALE_MX53_SMD
 
 config MACH_TQMA53
 	select HAVE_DEFAULT_ENVIRONMENT_NEW
-	bool "TQ i.MX53 TQMA53"
-
-config MACH_TQMA53_1GB_RAM
-	bool "Use 1GiB of SDRAM"
-	depends on MACH_TQMA53
-	help
-	  use 1GiB of SDRAM (512MiB otherwise)
+	bool "TQ i.MX53 TQMa53"
 
 config MACH_TX53
 	bool "Ka-Ro TX53"
@@ -508,6 +519,7 @@ config MACH_MX6Q_ARM2
 	bool "Freescale i.MX6q Armadillo2"
 
 config MACH_SABRELITE
+	select HAVE_DEFAULT_ENVIRONMENT_NEW
 	bool "Freescale i.MX6 Sabre Lite"
 
 config MACH_SABRESD
@@ -592,9 +604,26 @@ endchoice
 
 endif
 
+if MACH_TQMA53
+
+config MACH_TQMA53_1GB_RAM
+	bool "Use 1GiB of SDRAM"
+	depends on MACH_TQMA53
+	help
+	  use 1GiB of SDRAM (512MiB otherwise)
+
+endif
+
 endmenu
 
 menu "i.MX specific settings"
+
+config ARCH_IMX_USBLOADER
+	bool "compile imx-usb-loader"
+	help
+	  imx-usb-loader is a tool to upload and start imximages to an i.MX SoC
+	  in ROM boot mode. It requires libusb, so make sure you have the libusb
+	  devel package installed on your machine.
 
 config IMX_IIM
 	tristate "IIM fusebox device"

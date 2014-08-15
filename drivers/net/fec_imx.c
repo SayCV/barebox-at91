@@ -707,6 +707,7 @@ static int fec_probe(struct device_d *dev)
 
 	if (dev->device_node) {
 		ret = fec_probe_dt(dev, fec);
+		fec->phy_addr = -1;
 	} else if (pdata) {
 		fec->interface = pdata->xcv_type;
 		fec->phy_init = pdata->phy_init;
@@ -746,6 +747,9 @@ static void fec_remove(struct device_d *dev)
 
 static __maybe_unused struct of_device_id imx_fec_dt_ids[] = {
 	{
+		.compatible = "fsl,imx25-fec",
+		.data = FEC_TYPE_IMX27,
+	}, {
 		.compatible = "fsl,imx27-fec",
 		.data = FEC_TYPE_IMX27,
 	}, {

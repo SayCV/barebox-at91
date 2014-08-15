@@ -72,6 +72,8 @@ struct fdt_header *fdt_get_tree(void);
 
 struct fdt_header *of_get_fixed_tree(struct device_node *node);
 
+int of_modalias_node(struct device_node *node, char *modalias, int len);
+
 #define device_node_for_nach_child(node, child) \
 	list_for_each_entry(child, &node->children, parent_list)
 
@@ -138,6 +140,7 @@ int of_get_named_gpio(struct device_node *np,
 
 struct device_node *of_find_node_by_phandle(phandle phandle);
 void of_print_property(const void *data, int len);
+void of_print_cmdline(struct device_node *root);
 
 int of_device_is_compatible(const struct device_node *device,
 		const char *compat);
@@ -167,8 +170,10 @@ int of_set_property(struct device_node *node, const char *p, const void *val, in
 		int create);
 struct device_node *of_create_node(struct device_node *root, const char *path);
 
-struct device_node *of_get_root_node(void);
 int of_set_root_node(struct device_node *);
+
+const struct of_device_id *of_match_node(const struct of_device_id *matches,
+					 const struct device_node *node);
 
 struct cdev;
 
@@ -176,10 +181,14 @@ struct cdev;
 int of_parse_partitions(struct cdev *cdev, struct device_node *node);
 
 int of_alias_get_id(struct device_node *np, const char *stem);
+const char *of_alias_get(struct device_node *np);
 int of_device_is_stdout_path(struct device_d *dev);
 const char *of_get_model(void);
 void *of_flatten_dtb(struct device_node *node);
 int of_add_memory(struct device_node *node, bool dump);
+void of_add_memory_bank(struct device_node *node, bool dump, int r,
+		u64 base, u64 size);
+struct device_node *of_get_root_node(void);
 #else
 static inline int of_parse_partitions(struct cdev *cdev,
 					  struct device_node *node)
@@ -190,6 +199,11 @@ static inline int of_parse_partitions(struct cdev *cdev,
 static inline int of_alias_get_id(struct device_node *np, const char *stem)
 {
 	return -ENOENT;
+}
+
+static inline const char *of_alias_get(struct device_node *np)
+{
+	return NULL;
 }
 
 static inline int of_device_is_stdout_path(struct device_d *dev)
@@ -210,6 +224,11 @@ static inline void *of_flatten_dtb(struct device_node *node)
 static inline int of_add_memory(struct device_node *node, bool dump)
 {
 	return -EINVAL;
+}
+
+static inline struct device_node *of_get_root_node(void)
+{
+	return NULL;
 }
 #endif
 

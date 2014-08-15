@@ -145,6 +145,9 @@ static void of_alias_scan(void)
 
 	INIT_LIST_HEAD(&aliases_lookup);
 
+	if (!root_node)
+		return;
+
 	of_aliases = of_find_node_by_path(root_node, "/aliases");
 	if (!of_aliases)
 		return;
@@ -211,6 +214,19 @@ int of_alias_get_id(struct device_node *np, const char *stem)
 	return id;
 }
 EXPORT_SYMBOL_GPL(of_alias_get_id);
+
+const char *of_alias_get(struct device_node *np)
+{
+	struct property *pp;
+
+	list_for_each_entry(pp, &of_aliases->properties, list) {
+		if (!strcmp(np->full_name, pp->value))
+			return pp->name;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(of_alias_get);
 
 u64 of_translate_address(struct device_node *node, const __be32 *in_addr)
 {
@@ -295,21 +311,36 @@ int of_device_is_compatible(const struct device_node *device,
 }
 EXPORT_SYMBOL(of_device_is_compatible);
 
-int of_match(struct device_d *dev, struct driver_d *drv)
+/**
+ * of_match_node - Tell if an device_node has a matching of_match structure
+ *      @matches:       array of of device match structures to search in
+ *      @node:          the of device structure to match against
+ *
+ *      Low level utility function used by device matching.
+ */
+const struct of_device_id *of_match_node(const struct of_device_id *matches,
+					 const struct device_node *node)
 {
-	struct of_device_id *id;
-
-	id = drv->of_compatible;
-
-	while (id->compatible) {
-		if (of_device_is_compatible(dev->device_node, id->compatible) == 1) {
-			dev->of_id_entry = id;
-			return 0;
-		}
-		id++;
+	while (matches->compatible) {
+		if (of_device_is_compatible(node, matches->compatible) == 1)
+			return matches;
+		matches++;
 	}
 
-	return 1;
+	return NULL;
+}
+
+int of_match(struct device_d *dev, struct driver_d *drv)
+{
+	const struct of_device_id *id;
+
+	id = of_match_node(drv->of_compatible, dev->device_node);
+	if (!id)
+		return 1;
+
+	dev->of_id_entry = id;
+
+	return 0;
 }
 EXPORT_SYMBOL(of_match);
 
@@ -625,6 +656,33 @@ int of_property_read_string_index(struct device_node *np, const char *propname,
 }
 EXPORT_SYMBOL_GPL(of_property_read_string_index);
 
+/**
+ * of_modalias_node - Lookup appropriate modalias for a device node
+ * @node:	pointer to a device tree node
+ * @modalias:	Pointer to buffer that modalias value will be copied into
+ * @len:	Length of modalias value
+ *
+ * Based on the value of the compatible property, this routine will attempt
+ * to choose an appropriate modalias value for a particular device tree node.
+ * It does this by stripping the manufacturer prefix (as delimited by a ',')
+ * from the first entry in the compatible list property.
+ *
+ * This routine returns 0 on success, <0 on failure.
+ */
+int of_modalias_node(struct device_node *node, char *modalias, int len)
+{
+	const char *compatible, *p;
+	int cplen;
+
+	compatible = of_get_property(node, "compatible", &cplen);
+	if (!compatible || strlen(compatible) > cplen)
+		return -ENODEV;
+	p = strchr(compatible, ',');
+	strlcpy(modalias, p ? p + 1 : compatible, len);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(of_modalias_node);
+
 struct device_node *of_get_root_node(void)
 {
 	return root_node;
@@ -661,9 +719,6 @@ void of_print_nodes(struct device_node *node, int indent)
 	int i;
 
 	if (!node)
-		return;
-
-	if (of_node_disabled(node))
 		return;
 
 	for (i = 0; i < indent; i++)
@@ -810,12 +865,15 @@ static struct device_d *add_of_amba_device(struct device_node *node)
 	return &dev->dev;
 }
 
-static struct device_d *add_of_platform_device(struct device_node *node)
+static struct device_d *add_of_platform_device(struct device_node *node,
+		struct device_d *parent)
 {
 	struct device_d *dev;
 	char *name, *at;
 
 	dev = xzalloc(sizeof(*dev));
+
+	dev->parent = parent;
 
 	name = xstrdup(node->name);
 	at = strchr(name, '@');
@@ -841,7 +899,8 @@ static struct device_d *add_of_platform_device(struct device_node *node)
 	return dev;
 }
 
-static struct device_d *add_of_device(struct device_node *node)
+static struct device_d *add_of_device(struct device_node *node,
+		struct device_d *parent)
 {
 	const struct property *cp;
 
@@ -856,7 +915,7 @@ static struct device_d *add_of_device(struct device_node *node)
 	    of_device_is_compatible(node, "arm,primecell") == 1)
 		return add_of_amba_device(node);
 	else
-		return add_of_platform_device(node);
+		return add_of_platform_device(node, parent);
 }
 EXPORT_SYMBOL(add_of_device);
 
@@ -873,7 +932,6 @@ int of_add_memory(struct device_node *node, bool dump)
 	int na, nc;
 	const __be32 *reg, *endp;
 	int len, r = 0, ret;
-	static char str[6];
 	const char *device_type;
 
 	ret = of_property_read_string(node, "device_type", &device_type);
@@ -900,12 +958,7 @@ int of_add_memory(struct device_node *node, bool dump)
 		if (size == 0)
 			continue;
 
-		sprintf(str, "ram%d", r);
-
-		barebox_add_memory_bank(str, base, size);
-
-		if (dump)
-			pr_info("%s: %s: 0x%llx@0x%llx\n", node->name, str, size, base);
+		of_add_memory_bank(node, dump, r, base, size);
 
 		r++;
 	}
@@ -913,7 +966,8 @@ int of_add_memory(struct device_node *node, bool dump)
 	return 0;
 }
 
-static int add_of_device_resource(struct device_node *node)
+static struct device_d *add_of_device_resource(struct device_node *node,
+		struct device_d *parent)
 {
 	u64 address = 0, size;
 	struct resource *res, *resp;
@@ -923,13 +977,9 @@ static int add_of_device_resource(struct device_node *node)
 	int na, nc, n_resources;
 	int ret, len, index;
 
-	ret = of_add_memory(node, false);
-	if (ret != -ENXIO)
-		return ret;
-
 	reg = of_get_property(node, "reg", &len);
 	if (!reg)
-		return -EINVAL;
+		return add_of_device(node, parent);
 
 	of_bus_count_cells(node, &na, &nc);
 
@@ -970,7 +1020,8 @@ static int add_of_device_resource(struct device_node *node)
 	for_each_device(dev) {
 		if (!dev->resource)
 			continue;
-		if (dev->resource->start == address) {
+		if (dev->resource->start == res->start &&
+				dev->resource->end == res->end) {
 			debug("connecting %s to %s\n", node->name, dev_name(dev));
 			node->device = dev;
 			dev->device_node = node;
@@ -983,14 +1034,12 @@ static int add_of_device_resource(struct device_node *node)
 	node->resource = res;
 	node->num_resource = n_resources;
 
-	add_of_device(node);
-
-	return 0;
+	return add_of_device(node, parent);
 
 err_free:
 	free(res);
 
-	return ret;
+	return NULL;
 }
 
 void of_free(struct device_node *node)
@@ -1030,17 +1079,23 @@ void of_free(struct device_node *node)
 		of_set_root_node(NULL);
 }
 
-static void __of_probe(struct device_node *node)
+static void __of_probe(struct device_node *node,
+		const struct of_device_id *matches,
+		struct device_d *parent)
 {
 	struct device_node *n;
+	struct device_d *dev;
 
 	if (node->device)
 		return;
 
-	add_of_device_resource(node);
+	dev = add_of_device_resource(node, parent);
+
+	if (!of_match_node(matches, node))
+		return;
 
 	list_for_each_entry(n, &node->children, parent_list)
-		__of_probe(n);
+		__of_probe(n, matches, dev);
 }
 
 static void __of_parse_phandles(struct device_node *node)
@@ -1067,8 +1122,18 @@ const char *of_get_model(void)
 	return of_model;
 }
 
+const struct of_device_id of_default_bus_match_table[] = {
+	{
+		.compatible = "simple-bus",
+	}, {
+		/* sentinel */
+	}
+};
+
 int of_probe(void)
 {
+	struct device_node *memory, *n;
+
 	if(!root_node)
 		return -ENODEV;
 
@@ -1076,7 +1141,13 @@ int of_probe(void)
 	of_property_read_string(root_node, "model", &of_model);
 
 	__of_parse_phandles(root_node);
-	__of_probe(root_node);
+
+	memory = of_find_node_by_path(root_node, "/memory");
+	if (memory)
+		of_add_memory(memory, false);
+
+	list_for_each_entry(n, &root_node->children, parent_list)
+		__of_probe(n, of_default_bus_match_table, NULL);
 
 	return 0;
 }

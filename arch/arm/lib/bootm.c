@@ -91,6 +91,10 @@ static int __do_bootm_linux(struct image_data *data, int swap)
 			of_add_reserve_entry(initrd_start, initrd_end);
 		data->oftree = of_get_fixed_tree(data->of_root_node);
 		fdt_add_reserve_map(data->oftree);
+		if (bootm_verbose(data))
+			of_print_cmdline(data->of_root_node);
+		if (bootm_verbose(data) > 1)
+			of_print_nodes(data->of_root_node, 0);
 	}
 
 	if (bootm_verbose(data)) {
@@ -417,7 +421,7 @@ static int aimage_load_resource(int fd, struct resource *r, void* buf, int ps)
 
 	ret = read_full(fd, buf, to_read);
 	if (ret < 0)
-		printf("could not read dummy %d\n", to_read);
+		printf("could not read dummy %u\n", to_read);
 
 	return ret;
 }
