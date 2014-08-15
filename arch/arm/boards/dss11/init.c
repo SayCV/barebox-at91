@@ -24,13 +24,14 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <asm/io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <linux/mtd/nand.h>
 #include <mach/board.h>
 #include <mach/at91sam9_smc.h>
 #include <gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91_rstc.h>
 #include <linux/clk.h>
 
@@ -138,7 +139,6 @@ static int dss11_devices_init(void)
 	at91_add_device_mci(0, &dss11_mci_data);
 	at91_add_device_usbh_ohci(&dss11_usbh_data);
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(MACH_TYPE_DSS11);
 
 	devfs_add_partition("nand0", 0x00000, 0x20000, DEVFS_PARTITION_FIXED, "bootstrap");
@@ -154,7 +154,17 @@ device_initcall(dss11_devices_init);
 
 static int dss11_console_init(void)
 {
+	barebox_set_model("Aizo dSS11");
+	barebox_set_hostname("dss11");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 console_initcall(dss11_console_init);
+
+static int dss11_main_clock(void)
+{
+	at91_set_main_clock(18432000);
+	return 0;
+}
+pure_initcall(dss11_main_clock);

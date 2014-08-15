@@ -10,7 +10,27 @@ basedir=$1
 target=$3
 shift 3
 
-tempdir="$objtree/.barebox_default_env"
+abspath() {
+	local fn dn
+	if [ $# -ne 1 ]; then
+		echo "usage: ptxd_abspath <path>"
+		exit 1
+	fi
+	if [ -d "${1}" ]; then
+		fn=""
+		dn="${1}"
+	else
+		fn="/$(basename "${1}")"
+		dn="$(dirname "${1}")"
+	fi
+
+	[ ! -d "${dn}" ] && exit 1
+	echo "$(cd "${dn}" && pwd)${fn}"
+}
+export -f abspath
+
+tempdir=$(abspath "${target}.genenv.tmp")
+tmpfile="$(mktemp)"
 
 mkdir -p "$tempdir"
 
@@ -24,8 +44,15 @@ for i in $*; do
 done
 )
 
-find $tempdir -name '.svn' -o -name '*~' | xargs --no-run-if-empty rm -r
+find $tempdir -name '.svn' -o -name '*~' -delete
 
-$objtree/scripts/bareboxenv -s $tempdir $target
+$objtree/scripts/bareboxenv -s $tempdir ${tmpfile}
+
+diff "${tmpfile}" "${target}" >/dev/null 2>/dev/null
+if [ $? != 0 ]; then
+	mv "${tmpfile}" "${target}"
+else
+	rm ${tmpfile}
+fi
 
 rm -r $tempdir

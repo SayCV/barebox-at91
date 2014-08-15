@@ -32,59 +32,7 @@
 #include <magicvar.h>
 #include <environment.h>
 #include <libgen.h>
-
-void *read_file(const char *filename, size_t *size)
-{
-	int fd;
-	struct stat s;
-	void *buf = NULL;
-
-	if (stat(filename, &s))
-		return NULL;
-
-	buf = xzalloc(s.st_size + 1);
-
-	fd = open(filename, O_RDONLY);
-	if (fd < 0)
-		goto err_out;
-
-	if (read(fd, buf, s.st_size) < s.st_size)
-		goto err_out1;
-
-	close(fd);
-
-	if (size)
-		*size = s.st_size;
-
-	return buf;
-
-err_out1:
-	close(fd);
-err_out:
-	free(buf);
-	return NULL;
-}
-
-EXPORT_SYMBOL(read_file);
-
-int write_file(const char *filename, void *buf, size_t size)
-{
-	int fd, ret;
-
-	fd = open(filename, O_WRONLY | O_TRUNC | O_CREAT);
-	if (fd < 0)
-		return fd;
-
-	ret = write_full(fd, buf, size);
-
-	close(fd);
-
-	if (ret < 0)
-		return ret;
-
-	return 0;
-}
-EXPORT_SYMBOL(write_file);
+#include <block.h>
 
 char *mkmodestr(unsigned long mode, char *str)
 {
@@ -264,6 +212,19 @@ static struct fs_device_d *get_fsdevice_by_path(const char *path)
 	return fs_dev_root;
 }
 
+/*
+ * get_cdev_by_mountpath - return the cdev the given path
+ *                         is mounted on
+ */
+struct cdev *get_cdev_by_mountpath(const char *path)
+{
+	struct fs_device_d *fsdev;
+
+	fsdev = get_fsdevice_by_path(path);
+
+	return fsdev->cdev;
+}
+
 char *get_mounted_path(const char *path)
 {
 	struct fs_device_d *fdev;
@@ -376,6 +337,12 @@ static void automount_mount(const char *path, int instat)
 {
 	struct automount *am;
 	int ret;
+	static int in_automount;
+
+	if (in_automount)
+		return;
+
+	in_automount++;
 
 	list_for_each_entry(am, &automount_list, list) {
 		int len_path = strlen(path);
@@ -402,7 +369,7 @@ static void automount_mount(const char *path, int instat)
 
 		setenv("automount_path", am->path);
 		export("automount_path");
-		ret = run_command(am->cmd, 0);
+		ret = run_command(am->cmd);
 		setenv("automount_path", NULL);
 
 		if (ret)
@@ -411,8 +378,10 @@ static void automount_mount(const char *path, int instat)
 		else
 			automount_remove(am->path);
 
-		return;
+		break;
 	}
+
+	in_automount--;
 }
 
 BAREBOX_MAGICVAR(automount_path, "mountpath passed to automount scripts");
@@ -546,6 +515,8 @@ int chdir(const char *pathname)
 	ret = path_check_prereq(p, S_IFDIR);
 	if (ret)
 		goto out;
+
+	automount_mount(p, 0);
 
 	strcpy(cwd, p);
 
@@ -703,8 +674,7 @@ int open(const char *pathname, int flags, ...)
 	if (ret)
 		goto out;
 
-
-	if (flags & O_TRUNC) {
+	if (!(s.st_mode & S_IFCHR) && (flags & O_TRUNC)) {
 		ret = fsdrv->truncate(&fsdev->dev, f, 0);
 		f->size = 0;
 		if (ret)
@@ -1209,9 +1179,13 @@ static void fs_remove(struct device_d *dev)
 	}
 
 	free(fsdev->path);
+	free(fsdev->options);
 
 	if (fsdev == fs_dev_root)
 		fs_dev_root = NULL;
+
+	if (fsdev->cdev)
+		cdev_close(fsdev->cdev);
 
 	free(fsdev->backingstore);
 	free(fsdev);
@@ -1248,10 +1222,7 @@ static const char *detect_fs(const char *filename)
 	if (type == filetype_unknown)
 		return NULL;
 
-	for_each_driver(drv) {
-		if (drv->bus != &fs_bus)
-			continue;
-
+	bus_for_each_driver(&fs_bus, drv) {
 		fdrv = drv_to_fs_driver(drv);
 
 		if (type == fdrv->type)
@@ -1261,18 +1232,40 @@ static const char *detect_fs(const char *filename)
 	return NULL;
 }
 
+int fsdev_open_cdev(struct fs_device_d *fsdev)
+{
+	const char *backingstore = fsdev->backingstore;
+
+	if (!strncmp(backingstore , "/dev/", 5))
+		backingstore += 5;
+
+	fsdev->cdev = cdev_open(backingstore, O_RDWR);
+	if (!fsdev->cdev)
+		return -EINVAL;
+
+	fsdev->dev.parent = fsdev->cdev->dev;
+	fsdev->parent_device = fsdev->cdev->dev;
+
+	return 0;
+}
+
 /*
  * Mount a device to a directory.
  * We do this by registering a new device on which the filesystem
  * driver will match.
  */
-int mount(const char *device, const char *fsname, const char *_path)
+int mount(const char *device, const char *fsname, const char *_path,
+		const char *fsoptions)
 {
 	struct fs_device_d *fsdev;
 	int ret;
 	char *path = normalise_path(_path);
 
-	debug("mount: %s on %s type %s\n", device, path, fsname);
+	if (!fsoptions)
+		fsoptions = "";
+
+	debug("mount: %s on %s type %s, options=%s\n",
+			device, path, fsname, fsoptions);
 
 	if (fs_dev_root) {
 		fsdev = get_fsdevice_by_path(path);
@@ -1304,14 +1297,7 @@ int mount(const char *device, const char *fsname, const char *_path)
 	fsdev->dev.id = get_free_deviceid(fsdev->dev.name);
 	fsdev->path = xstrdup(path);
 	fsdev->dev.bus = &fs_bus;
-
-	if (!strncmp(device, "/dev/", 5))
-		fsdev->cdev = cdev_by_name(device + 5);
-
-	if (fsdev->cdev) {
-		fsdev->dev.parent = fsdev->cdev->dev;
-		fsdev->parent_device = fsdev->cdev->dev;
-	}
+	fsdev->options = xstrdup(fsoptions);
 
 	ret = register_device(&fsdev->dev);
 	if (ret)
@@ -1643,3 +1629,82 @@ ssize_t mem_write(struct cdev *cdev, const void *buf, size_t count, loff_t offse
 	return size;
 }
 EXPORT_SYMBOL(mem_write);
+
+/*
+ * cdev_get_mount_path - return the path a cdev is mounted on
+ *
+ * If a cdev is mounted return the path it's mounted on, NULL
+ * otherwise.
+ */
+const char *cdev_get_mount_path(struct cdev *cdev)
+{
+	struct fs_device_d *fsdev;
+
+	for_each_fs_device(fsdev) {
+		if (fsdev->cdev && fsdev->cdev == cdev)
+			return fsdev->path;
+	}
+
+	return NULL;
+}
+
+/*
+ * cdev_mount_default - mount a cdev to the default path
+ *
+ * If a cdev is already mounted return the path it's mounted on, otherwise
+ * mount it to /mnt/<cdevname> and return the path. Returns an error pointer
+ * on failure.
+ */
+const char *cdev_mount_default(struct cdev *cdev, const char *fsoptions)
+{
+	const char *path;
+	char *newpath, *devpath;
+	int ret;
+
+	/*
+	 * If this cdev is already mounted somewhere use this path
+	 * instead of mounting it again to avoid corruption on the
+	 * filesystem. Note this ignores eventual fsoptions though.
+	 */
+	path = cdev_get_mount_path(cdev);
+	if (path)
+		return path;
+
+	newpath = asprintf("/mnt/%s", cdev->name);
+	make_directory(newpath);
+
+	devpath = asprintf("/dev/%s", cdev->name);
+
+	ret = mount(devpath, NULL, newpath, fsoptions);
+
+	free(devpath);
+
+	if (ret) {
+		free(newpath);
+		return ERR_PTR(ret);
+	}
+
+	return cdev_get_mount_path(cdev);
+}
+
+/*
+ * mount_all - iterate over block devices and mount all devices we are able to
+ */
+void mount_all(void)
+{
+	struct device_d *dev;
+	struct block_device *bdev;
+
+	if (!IS_ENABLED(CONFIG_BLOCK))
+		return;
+
+	for_each_device(dev)
+		device_detect(dev);
+
+	for_each_block_device(bdev) {
+		struct cdev *cdev = &bdev->cdev;
+
+		list_for_each_entry(cdev, &bdev->dev->cdevs, devices_list)
+			cdev_mount_default(cdev, NULL);
+	}
+}

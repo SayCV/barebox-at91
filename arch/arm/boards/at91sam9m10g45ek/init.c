@@ -20,6 +20,7 @@
 #include <net.h>
 #include <mci.h>
 #include <init.h>
+#include <gpio.h>
 #include <environment.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
@@ -27,13 +28,13 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
 #include <mach/at91_pmc.h>
 #include <mach/board.h>
-#include <mach/gpio.h>
+#include <mach/iomux.h>
 #include <mach/io.h>
 #include <mach/at91sam9_smc.h>
 #include <gpio_keys.h>
@@ -181,25 +182,25 @@ static void ek_device_add_leds(void) {}
 #ifdef CONFIG_KEYBOARD_GPIO
 struct gpio_keys_button keys[] = {
 	{
-		.code = KEY_HOME,
+		.code = BB_KEY_HOME,
 		.gpio = AT91_PIN_PB6,
 	}, {
-		.code = KEY_RETURN,
+		.code = BB_KEY_RETURN,
 		.gpio = AT91_PIN_PB7,
 	}, {
-		.code = KEY_LEFT,
+		.code = BB_KEY_LEFT,
 		.gpio = AT91_PIN_PB14,
 	}, {
-		.code = KEY_RIGHT,
+		.code = BB_KEY_RIGHT,
 		.gpio = AT91_PIN_PB15,
 	}, {
-		.code = KEY_UP,
+		.code = BB_KEY_UP,
 		.gpio = AT91_PIN_PB16,
 	}, {
-		.code = KEY_DOWN,
+		.code = BB_KEY_DOWN,
 		.gpio = AT91_PIN_PB17,
 	}, {
-		.code = KEY_RETURN,
+		.code = BB_KEY_RETURN,
 		.gpio = AT91_PIN_PB18,
 	},
 };
@@ -315,7 +316,6 @@ static int at91sam9m10g45ek_devices_init(void)
 	devfs_add_partition("nand0", SZ_512K, SZ_128K, DEVFS_PARTITION_FIXED, "env_raw1");
 	dev_add_bb_dev("env_raw1", "env1");
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_6 + 0x100));
 	armlinux_set_architecture(MACH_TYPE_AT91SAM9M10G45EK);
 	ek_set_board_revision();
 
@@ -325,7 +325,17 @@ device_initcall(at91sam9m10g45ek_devices_init);
 
 static int at91sam9m10g45ek_console_init(void)
 {
+	barebox_set_model("Atmel at91sam9m10g45-ek");
+	barebox_set_hostname("at91sam9m10g45-ek");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 console_initcall(at91sam9m10g45ek_console_init);
+
+static int at91sam9m10g45ek_main_clock(void)
+{
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(at91sam9m10g45ek_main_clock);

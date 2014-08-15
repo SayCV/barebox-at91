@@ -25,7 +25,7 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
@@ -33,6 +33,7 @@
 #include <mach/at91sam9_smc.h>
 #include <gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91_pmc.h>
 #include <mach/at91_rstc.h>
 #include <mach/at91sam9x5_matrix.h>
@@ -362,7 +363,6 @@ static int at91sam9x5ek_devices_init(void)
 	ek_add_device_i2c();
 	ek_add_device_lcdc();
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(CONFIG_MACH_AT91SAM9X5EK);
 
 	devfs_add_partition("nand0", 0x00000, SZ_256K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
@@ -380,8 +380,18 @@ device_initcall(at91sam9x5ek_devices_init);
 
 static int at91sam9x5ek_console_init(void)
 {
+	barebox_set_model("Atmel at91sam9x5-ek");
+	barebox_set_hostname("at91sam9x5-ek");
+
 	at91_register_uart(0, 0);
 	at91_register_uart(1, 0);
 	return 0;
 }
 console_initcall(at91sam9x5ek_console_init);
+
+static int at91sam9x5ek_main_clock(void)
+{
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(at91sam9x5ek_main_clock);

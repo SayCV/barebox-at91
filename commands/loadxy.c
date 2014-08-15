@@ -40,26 +40,6 @@
 
 #define DEF_FILE	"image.bin"
 
-/**
- * @brief returns current used console device
- *
- * @return console device which is registered with CONSOLE_STDIN and
- * CONSOLE_STDOUT
- */
-static struct console_device *get_current_console(void)
-{
-	struct console_device *cdev;
-	/*
-	 * Assumption to have BOTH CONSOLE_STDIN AND STDOUT in the
-	 * same output console
-	 */
-	for_each_console(cdev) {
-		if ((cdev->f_active & (CONSOLE_STDIN | CONSOLE_STDOUT)))
-			return cdev;
-	}
-	return NULL;
-}
-
 static int console_change_speed(struct console_device *cdev, int baudrate)
 {
 	int current_baudrate;
@@ -134,7 +114,7 @@ static int do_loady(int argc, char *argv[])
 	if (cname)
 		cdev = get_named_console(cname);
 	else
-		cdev = get_current_console();
+		cdev = console_get_first_active();
 	if (!cdev) {
 		printf("%s:No console device %s with STDIN and STDOUT\n",
 		       argv[0], cname ? cname : "default");
@@ -160,6 +140,22 @@ static int do_loady(int argc, char *argv[])
 	return rcode;
 }
 
+BAREBOX_CMD_HELP_START(loady)
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT("-g", "use Y-Modem/G (use on lossless tty such as USB)")
+BAREBOX_CMD_HELP_OPT("-b BAUD", "baudrate for download (default: console baudrate")
+BAREBOX_CMD_HELP_OPT("-t NAME", "console name to use (default: current)")
+BAREBOX_CMD_HELP_END
+
+BAREBOX_CMD_START(loady)
+	.cmd = do_loady,
+	BAREBOX_CMD_DESC("load binary file over serial line (Y-Modem)")
+	BAREBOX_CMD_OPTS("[-gtb]")
+	BAREBOX_CMD_GROUP(CMD_GRP_BOOT)
+	BAREBOX_CMD_HELP(cmd_loady_help)
+BAREBOX_CMD_END
+
+
 /**
  * @brief provide the loadx(X-Modem) support
  *
@@ -176,7 +172,7 @@ static int do_loadx(int argc, char *argv[])
 	char *output_file = NULL, *cname = NULL;
 	struct console_device *cdev = NULL;
 
-	while ((opt = getopt(argc, argv, "f:b:o:c")) > 0) {
+	while ((opt = getopt(argc, argv, "f:b:t:o:c")) > 0) {
 		switch (opt) {
 		case 'f':
 			output_file = optarg;
@@ -202,9 +198,9 @@ static int do_loadx(int argc, char *argv[])
 	if (cname)
 		cdev = get_named_console(cname);
 	else
-		cdev = get_current_console();
+		cdev = console_get_first_active();
 	if (!cdev) {
-		printf("%s:No console device %s with STDIN and STDOUT\n",
+		printf("%s:No console device %s with STDIN and STDOUT",
 		       argv[0], cname ? cname : "default");
 		return -ENODEV;
 	}
@@ -231,12 +227,12 @@ static int do_loadx(int argc, char *argv[])
 	}
 
 	current_baudrate = console_change_speed(cdev, load_baudrate);
-	printf("## Ready for binary (X-Modem) download "
+	printf("## Ready for binary (xmodem) download "
 	       "to 0x%08lX offset on %s device at %d bps...\n", offset,
-	       output_file, load_baudrate);
-	rcode = do_load_serial_ymodem(cdev);
+	       output_file, load_baudrate ? load_baudrate : current_baudrate);
+	rcode = do_load_serial_xmodem(cdev, ofd);
 	if (rcode < 0) {
-		printf("## Binary (kermit) download aborted (%d)\n", rcode);
+		printf("## Binary (xmodem) download aborted (%d)\n", rcode);
 		rcode = 1;
 	}
 	console_change_speed(cdev, current_baudrate);
@@ -244,30 +240,19 @@ static int do_loadx(int argc, char *argv[])
 	return rcode;
 }
 
-static const __maybe_unused char cmd_loadx_help[] =
-	"[OPTIONS]\n"
-	"  -f file   - where to download to - defaults to " DEF_FILE "\n"
-	"  -o offset - what offset to download - defaults to 0\n"
-	"  -t name   - console device name to use - defaults to current console\n"
-	"  -b baud   - baudrate at which to download - defaults to console baudrate\n"
-	"  -c        - Create file if it is not present - default disabled";
+BAREBOX_CMD_HELP_START(loadx)
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT("-f FILE", "download to FILE (default image.bin")
+BAREBOX_CMD_HELP_OPT("-o OFFS", "destination file OFFSet (default 0)")
+BAREBOX_CMD_HELP_OPT("-b BAUD", "baudrate for download (default: console baudrate")
+BAREBOX_CMD_HELP_OPT("-t NAME", "console name to use (default: current)")
+BAREBOX_CMD_HELP_OPT("-c",      "create file if not present")
+BAREBOX_CMD_HELP_END
 
-#ifdef CONFIG_CMD_LOADY
 BAREBOX_CMD_START(loadx)
 	.cmd = do_loadx,
-	.usage = "Load binary file over serial line (X-Modem)",
-BAREBOX_CMD_HELP(cmd_loadx_help)
+	BAREBOX_CMD_DESC("load binary file over serial line (X-Modem)")
+	BAREBOX_CMD_OPTS("[-fptbc]")
+	BAREBOX_CMD_GROUP(CMD_GRP_BOOT)
+	BAREBOX_CMD_HELP(cmd_loadx_help)
 BAREBOX_CMD_END
-
-static const __maybe_unused char cmd_loady_help[] =
-	"[OPTIONS]\n"
-	"  -y        - use Y-Modem/G (only for lossless tty as USB)\n"
-	"  -t name   - console device name to use - defaults to current console\n"
-	"  -b baud   - baudrate at which to download - defaults to console baudrate\n";
-
-BAREBOX_CMD_START(loady)
-	.cmd = do_loady,
-	.usage = "Load binary file over serial line (Y-Modem or Y-Modem/G)",
-BAREBOX_CMD_HELP(cmd_loady_help)
-BAREBOX_CMD_END
-#endif

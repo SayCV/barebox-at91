@@ -152,6 +152,17 @@
 #define MC13783_SW1B_SOFTSTART		(1 << 17)
 #define MC13783_SW_PLL_FACTOR(x)	(((x) - 28) << 19)
 
+/* MC34708 Definitions */
+#define SWx_VOLT_MASK_MC34708	0x3F
+#define SWx_1_250V_MC34708	0x30
+#define SWx_1_300V_MC34708	0x34
+#define TIMER_MASK_MC34708	0x300
+#define TIMER_4S_MC34708	0x100
+#define VUSBSEL_MC34708		(1 << 2)
+#define VUSBEN_MC34708		(1 << 3)
+#define SWBST_CTRL		31
+#define SWBST_AUTO		0x8
+
 struct mc13xxx;
 
 #ifdef CONFIG_MFD_MC13XXX
@@ -160,6 +171,7 @@ extern int mc13xxx_revision(struct mc13xxx *mc13xxx);
 extern int mc13xxx_reg_read(struct mc13xxx *mc13xxx, u8 reg, u32 *val);
 extern int mc13xxx_reg_write(struct mc13xxx *mc13xxx, u8 reg, u32 val);
 extern int mc13xxx_set_bits(struct mc13xxx *mc13xxx, u8 reg, u32 mask, u32 val);
+int mc13xxx_register_init_callback(void(*callback)(struct mc13xxx *mc13xxx));
 #else
 static inline struct mc13xxx *mc13xxx_get(void)
 {
@@ -182,6 +194,11 @@ static inline int mc13xxx_reg_write(struct mc13xxx *mc13xxx, u8 reg, u32 val)
 }
 
 static inline int mc13xxx_set_bits(struct mc13xxx *mc13xxx, u8 reg, u32 mask, u32 val)
+{
+	return -ENODEV;
+}
+
+static inline int mc13xxx_register_init_callback(void(*callback)(struct mc13xxx *mc13xxx))
 {
 	return -ENODEV;
 }

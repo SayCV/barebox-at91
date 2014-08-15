@@ -25,15 +25,16 @@
 #include <generated/mach-types.h>
 #include <partition.h>
 #include <fs.h>
+#include <gpio.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <linux/mtd/nand.h>
 #include <mach/at91_pmc.h>
 #include <mach/board.h>
-#include <mach/gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91sam9_smc.h>
 #include <linux/w1-gpio.h>
 #include <w1_mac_address.h>
@@ -131,7 +132,6 @@ static int pm9263_devices_init(void)
 	devfs_add_partition("nor0", 0x00000, 0x40000, DEVFS_PARTITION_FIXED, "self0");
 	devfs_add_partition("nor0", 0x40000, 0x10000, DEVFS_PARTITION_FIXED, "env0");
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(MACH_TYPE_PM9263);
 
 	return 0;
@@ -141,8 +141,18 @@ device_initcall(pm9263_devices_init);
 
 static int pm9263_console_init(void)
 {
+	barebox_set_model("Ronetix PM9263");
+	barebox_set_hostname("pm9263");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 
 console_initcall(pm9263_console_init);
+
+static int pm9263_main_clock(void)
+{
+	at91_set_main_clock(18432000);
+	return 0;
+}
+pure_initcall(pm9263_main_clock);

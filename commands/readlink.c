@@ -15,9 +15,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <common.h>
@@ -68,13 +65,16 @@ err:
 }
 
 BAREBOX_CMD_HELP_START(readlink)
-BAREBOX_CMD_HELP_USAGE("readlink [-f] FILE REALNAME\n")
-BAREBOX_CMD_HELP_SHORT("read value of a symbolic link and store into $REALNAME\n")
-BAREBOX_CMD_HELP_SHORT("-f canonicalize by following first symlink");
+BAREBOX_CMD_HELP_TEXT("Read value of a symbolic link and store it into VARIABLE.")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT ("-f", "canonicalize by following first symlink");
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(readlink)
 	.cmd		= do_readlink,
-	.usage		= "read value of a symbolic link",
+	BAREBOX_CMD_DESC("read value of a symbolic link")
+	BAREBOX_CMD_OPTS("[-f] FILE VARIABLE")
+	BAREBOX_CMD_GROUP(CMD_GRP_FILE)
 	BAREBOX_CMD_HELP(cmd_readlink_help)
 BAREBOX_CMD_END

@@ -9,9 +9,9 @@ choice
 
 config BOARD_NETGEAR_WG102
 	bool "Netgear WG102"
+	select HAVE_PBL_IMAGE
+	select HAVE_IMAGE_COMPRESSION
 
 endchoice
-
-source arch/mips/boards/netgear-wg102/Kconfig
 
 endif

@@ -7,7 +7,7 @@
 #define PARAM_FLAG_RO	(1 << 0)
 
 struct device_d;
-typedef unsigned long          IPaddr_t;
+typedef uint32_t          IPaddr_t;
 
 struct param_d {
 	const char* (*get)(struct device_d *, struct param_d *param);
@@ -31,6 +31,11 @@ int dev_add_param(struct device_d *dev, const char *name,
 		const char *(*get)(struct device_d *, struct param_d *p),
 		unsigned long flags);
 
+struct param_d *dev_add_param_string(struct device_d *dev, const char *name,
+		int (*set)(struct param_d *p, void *priv),
+		int (*get)(struct param_d *p, void *priv),
+		char **value, void *priv);
+
 struct param_d *dev_add_param_int(struct device_d *dev, const char *name,
 		int (*set)(struct param_d *p, void *priv),
 		int (*get)(struct param_d *p, void *priv),
@@ -49,12 +54,20 @@ struct param_d *dev_add_param_enum(struct device_d *dev, const char *name,
 struct param_d *dev_add_param_int_ro(struct device_d *dev, const char *name,
 		int value, const char *format);
 
+struct param_d *dev_add_param_llint_ro(struct device_d *dev, const char *name,
+		long long value, const char *format);
+
 struct param_d *dev_add_param_ip(struct device_d *dev, const char *name,
 		int (*set)(struct param_d *p, void *priv),
 		int (*get)(struct param_d *p, void *priv),
 		IPaddr_t *ip, void *priv);
 
-int dev_add_param_fixed(struct device_d *dev, char *name, char *value);
+struct param_d *dev_add_param_mac(struct device_d *dev, const char *name,
+		int (*set)(struct param_d *p, void *priv),
+		int (*get)(struct param_d *p, void *priv),
+		u8 *mac, void *priv);
+
+int dev_add_param_fixed(struct device_d *dev, char *name, const char *value);
 
 void dev_remove_param(struct param_d *p);
 
@@ -85,6 +98,14 @@ static inline int dev_add_param(struct device_d *dev, char *name,
 		unsigned long flags)
 {
 	return 0;
+}
+
+static inline struct param_d *dev_add_param_string(struct device_d *dev, const char *name,
+		int (*set)(struct param_d *p, void *priv),
+		int (*get)(struct param_d *p, void *priv),
+		char **value, void *priv)
+{
+	return NULL;
 }
 
 static inline struct param_d *dev_add_param_int(struct device_d *dev, const char *name,
@@ -118,10 +139,24 @@ static inline struct param_d *dev_add_param_int_ro(struct device_d *dev, const c
 	return NULL;
 }
 
+static inline struct param_d *dev_add_param_llint_ro(struct device_d *dev, const char *name,
+		long long value, const char *format)
+{
+	return NULL;
+}
+
 static inline struct param_d *dev_add_param_ip(struct device_d *dev, const char *name,
 		int (*set)(struct param_d *p, void *priv),
 		int (*get)(struct param_d *p, void *priv),
 		IPaddr_t *ip, void *priv)
+{
+	return NULL;
+}
+
+static inline struct param_d *dev_add_param_mac(struct device_d *dev, const char *name,
+		int (*set)(struct param_d *p, void *priv),
+		int (*get)(struct param_d *p, void *priv),
+		u8 *mac, void *priv)
 {
 	return NULL;
 }

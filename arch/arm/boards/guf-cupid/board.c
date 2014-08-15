@@ -27,8 +27,8 @@
 #include <fs.h>
 #include <mach/imx35-regs.h>
 #include <asm/armlinux.h>
-#include <mach/gpio.h>
 #include <io.h>
+#include <gpio.h>
 #include <partition.h>
 #include <nand.h>
 #include <generated/mach-types.h>
@@ -68,7 +68,6 @@ static struct fb_videomode guf_cupid_fb_mode = {
 	.sync		= FB_SYNC_VERT_HIGH_ACT | FB_SYNC_CLK_INVERT |
 			  FB_SYNC_OE_ACT_HIGH,
 	.vmode		= FB_VMODE_NONINTERLACED,
-	.flag		= 0,
 };
 
 #define GPIO_LCD_ENABLE		(2 * 32 + 24)
@@ -127,7 +126,6 @@ static int cupid_devices_init(void)
 	imx35_add_fb(&ipu_fb_data);
 	imx35_add_mmc0(NULL);
 
-	armlinux_set_bootparams((void *)0x80000100);
 	armlinux_set_architecture(MACH_TYPE_GUF_CUPID);
 
 	return 0;
@@ -226,6 +224,9 @@ static iomux_v3_cfg_t cupid_pads[] = {
 static int cupid_console_init(void)
 {
 	mxc_iomux_v3_setup_multiple_pads(cupid_pads, ARRAY_SIZE(cupid_pads));
+
+	barebox_set_model("Garz & Fricke CUPID");
+	barebox_set_hostname("cupid");
 
 	imx35_add_uart0();
 
@@ -340,19 +341,14 @@ static int do_cpufreq(int argc, char *argv[])
 		return COMMAND_ERROR_USAGE;
 	}
 
-	printf("Switched CPU frequency to %ldMHz\n", freq);
+	printf("Switched CPU frequency to %luMHz\n", freq);
 
 	return 0;
 }
 
-static const __maybe_unused char cmd_cpufreq_help[] =
-"Usage: cpufreq 399|532\n"
-"\n"
-"Set CPU frequency to <freq> MHz\n";
-
 BAREBOX_CMD_START(cpufreq)
 	.cmd            = do_cpufreq,
-	.usage          = "adjust CPU frequency",
-	BAREBOX_CMD_HELP(cmd_cpufreq_help)
+	BAREBOX_CMD_DESC("adjust CPU frequency")
+	BAREBOX_CMD_OPTS("399|532")
+	BAREBOX_CMD_GROUP(CMD_GRP_HWMANIP)
 BAREBOX_CMD_END
-

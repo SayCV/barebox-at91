@@ -26,12 +26,13 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
 #include <mach/at91_pmc.h>
 #include <mach/board.h>
+#include <mach/iomux.h>
 #include <gpio.h>
 #include <mach/io.h>
 #include <mach/at91sam9_smc.h>
@@ -269,7 +270,6 @@ static int at91sam9263ek_devices_init(void)
 		dev_add_bb_dev("env_raw1", "env1");
 	}
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(MACH_TYPE_AT91SAM9263EK);
 
 	return 0;
@@ -279,8 +279,18 @@ device_initcall(at91sam9263ek_devices_init);
 
 static int at91sam9263ek_console_init(void)
 {
+	barebox_set_model("Atmel at91sam9263-ek");
+	barebox_set_hostname("at91sam9263-ek");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 
 console_initcall(at91sam9263ek_console_init);
+
+static int at91sam9263ek_main_clock(void)
+{
+	at91_set_main_clock(16367660);
+	return 0;
+}
+pure_initcall(at91sam9263ek_main_clock);

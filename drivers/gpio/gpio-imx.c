@@ -23,6 +23,7 @@
 #include <common.h>
 #include <errno.h>
 #include <io.h>
+#include <of.h>
 #include <gpio.h>
 #include <init.h>
 
@@ -112,11 +113,21 @@ static int imx_gpio_get_value(struct gpio_chip *chip, unsigned gpio)
 	return val & (1 << gpio) ? 1 : 0;
 }
 
+static int imx_get_direction(struct gpio_chip *chip, unsigned offset)
+{
+	struct imx_gpio_chip *imxgpio = container_of(chip, struct imx_gpio_chip, chip);
+	void __iomem *base = imxgpio->base;
+	u32 val = readl(base + imxgpio->regs->gdir);
+
+	return (val & (1 << offset)) ? GPIOF_DIR_OUT : GPIOF_DIR_IN;
+}
+
 static struct gpio_ops imx_gpio_ops = {
 	.direction_input = imx_gpio_direction_input,
 	.direction_output = imx_gpio_direction_output,
 	.get = imx_gpio_get_value,
 	.set = imx_gpio_set_value,
+	.get_direction = imx_get_direction,
 };
 
 static int imx_gpio_probe(struct device_d *dev)
@@ -204,4 +215,4 @@ static int imx_gpio_add(void)
 	platform_driver_register(&imx_gpio_driver);
 	return 0;
 }
-coredevice_initcall(imx_gpio_add);
+core_initcall(imx_gpio_add);

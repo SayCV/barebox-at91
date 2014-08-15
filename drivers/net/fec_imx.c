@@ -27,6 +27,8 @@
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <of_net.h>
+#include <of_gpio.h>
+#include <gpio.h>
 
 #include <asm/mmu.h>
 
@@ -45,19 +47,6 @@ struct fec_frame {
 	uint8_t head[16];	/* MAC header(6 + 6 + 2) + 2(aligned) */
 };
 
-#ifdef CONFIG_COMMON_CLK
-static inline unsigned long fec_clk_get_rate(struct fec_priv *fec)
-{
-	return clk_get_rate(fec->clk);
-}
-#else
-static inline unsigned long fec_clk_get_rate(struct fec_priv *fec)
-{
-	return imx_get_fecclk();
-}
-#endif
-
-
 /*
  * MII-interface related functions
  */
@@ -69,7 +58,7 @@ static int fec_miibus_read(struct mii_bus *bus, int phyAddr, int regAddr)
 	uint32_t phy;		/* convenient holder for the PHY */
 	uint64_t start;
 
-	writel(((fec_clk_get_rate(fec) >> 20) / 5) << 1,
+	writel(((clk_get_rate(fec->clk) >> 20) / 5) << 1,
 			fec->regs + FEC_MII_SPEED);
 	/*
 	 * reading from any PHY's register is done by properly
@@ -100,7 +89,7 @@ static int fec_miibus_read(struct mii_bus *bus, int phyAddr, int regAddr)
 	/*
 	 * it's now safe to read the PHY's register
 	 */
-	return readl(fec->regs + FEC_MII_DATA);
+	return readl(fec->regs + FEC_MII_DATA) & 0xffff;
 }
 
 static int fec_miibus_write(struct mii_bus *bus, int phyAddr,
@@ -112,7 +101,7 @@ static int fec_miibus_write(struct mii_bus *bus, int phyAddr,
 	uint32_t phy;		/* convenient holder for the PHY */
 	uint64_t start;
 
-	writel(((fec_clk_get_rate(fec) >> 20) / 5) << 1,
+	writel(((clk_get_rate(fec->clk) >> 20) / 5) << 1,
 			fec->regs + FEC_MII_SPEED);
 
 	reg = regAddr << FEC_MII_DATA_RA_SHIFT;
@@ -305,7 +294,7 @@ static int fec_init(struct eth_device *dev)
 	 * Set MII_SPEED = (1/(mii_speed * 2)) * System Clock
 	 * and do not drop the Preamble.
 	 */
-	writel(((fec_clk_get_rate(fec) >> 20) / 5) << 1,
+	writel(((clk_get_rate(fec->clk) >> 20) / 5) << 1,
 			fec->regs + FEC_MII_SPEED);
 
 	if (fec->interface == PHY_INTERFACE_MODE_RMII) {
@@ -592,7 +581,7 @@ static int fec_recv(struct eth_device *dev)
 			 */
 			frame = phys_to_virt(readl(&rbd->data_pointer));
 			frame_length = readw(&rbd->data_length) - 4;
-			net_receive(frame->data, frame_length);
+			net_receive(dev, frame->data, frame_length);
 			len = frame_length;
 		} else {
 			if (bd_status & FEC_RBD_ERR) {
@@ -632,6 +621,7 @@ static int fec_alloc_receive_packets(struct fec_priv *fec, int count, int size)
 #ifdef CONFIG_OFDEVICE
 static int fec_probe_dt(struct device_d *dev, struct fec_priv *fec)
 {
+	struct device_node *mdiobus;
 	int ret;
 
 	ret = of_get_phy_mode(dev->device_node);
@@ -639,6 +629,10 @@ static int fec_probe_dt(struct device_d *dev, struct fec_priv *fec)
 		fec->interface = PHY_INTERFACE_MODE_MII;
 	else
 		fec->interface = ret;
+
+	mdiobus = of_get_child_by_name(dev->device_node, "mdio");
+	if (mdiobus)
+		fec->miibus.dev.device_node = mdiobus;
 
 	return 0;
 }
@@ -656,6 +650,7 @@ static int fec_probe(struct device_d *dev)
 	void *base;
 	int ret;
 	enum fec_type type;
+	int phy_reset;
 
 	ret = dev_get_drvdata(dev, (unsigned long *)&type);
 	if (ret)
@@ -674,15 +669,29 @@ static int fec_probe(struct device_d *dev)
 	edev->set_ethaddr = fec_set_hwaddr;
 	edev->parent = dev;
 
-	if (IS_ENABLED(CONFIG_COMMON_CLK)) {
-		fec->clk = clk_get(dev, NULL);
-		if (IS_ERR(fec->clk)) {
-			ret = PTR_ERR(fec->clk);
-			goto err_free;
-		}
+	fec->clk = clk_get(dev, NULL);
+	if (IS_ERR(fec->clk)) {
+		ret = PTR_ERR(fec->clk);
+		goto err_free;
 	}
 
+	clk_enable(fec->clk);
+
 	fec->regs = dev_request_mem_region(dev, 0);
+
+	phy_reset = of_get_named_gpio(dev->device_node, "phy-reset-gpios", 0);
+	if (gpio_is_valid(phy_reset)) {
+		ret = gpio_request(phy_reset, "phy-reset");
+		if (ret)
+			goto err_free;
+
+		ret = gpio_direction_output(phy_reset, 0);
+		if (ret)
+			goto err_free;
+
+		udelay(10);
+		gpio_set_value(phy_reset, 1);
+	}
 
 	/* Reset chip. */
 	writel(FEC_ECNTRL_RESET, fec->regs + FEC_ECNTRL);
@@ -728,9 +737,14 @@ static int fec_probe(struct device_d *dev)
 	fec->miibus.priv = fec;
 	fec->miibus.parent = dev;
 
-	mdiobus_register(&fec->miibus);
+	ret = mdiobus_register(&fec->miibus);
+	if (ret)
+		return ret;
 
-	eth_register(edev);
+	ret = eth_register(edev);
+	if (ret)
+		return ret;
+
 	return 0;
 
 err_free:

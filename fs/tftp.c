@@ -33,14 +33,16 @@
 #include <kfifo.h>
 #include <sizes.h>
 
-#define TFTP_PORT	69	/* Well known TFTP port #		*/
-#define TIMEOUT		5	/* Seconds to timeout for a lost pkt	*/
+#define TFTP_PORT	69	/* Well known TFTP port number */
+
+/* Seconds to wait before remote server is allowed to resend a lost packet */
+#define TIMEOUT		5
 
 /* After this time without a response from the server we will resend a packet */
 #define TFTP_RESEND_TIMEOUT	SECOND
 
 /* After this time without progress we will bail out */
-#define TFTP_TIMEOUT		(5 * SECOND)
+#define TFTP_TIMEOUT		((TIMEOUT * 3) * SECOND)
 
 /*
  *	TFTP operations.
@@ -110,7 +112,7 @@ static int tftp_rmdir(struct device_d *dev, const char *pathname)
 
 static int tftp_truncate(struct device_d *dev, FILE *f, ulong size)
 {
-	return -ENOSYS;
+	return 0;
 }
 
 static int tftp_send(struct file_priv *priv)
@@ -393,6 +395,14 @@ static struct file_priv *tftp_do_open(struct device_d *dev,
 	case O_WRONLY:
 		priv->push = 1;
 		priv->state = STATE_WRQ;
+		if (!(accmode & O_TRUNC)) {
+			/*
+			 * TFTP always truncates the existing file, so this
+			 * flag is mandatory when opening a file for writing.
+			 */
+			ret = -ENOSYS;
+			goto out;
+		}
 		break;
 	case O_RDWR:
 		ret = -ENOSYS;
@@ -598,7 +608,10 @@ static int tftp_stat(struct device_d *dev, const char *filename, struct stat *s)
 		return PTR_ERR(priv);
 
 	s->st_mode = S_IFREG | S_IRWXU | S_IRWXG | S_IRWXO;
-	s->st_size = priv->filesize;
+	if (priv->filesize)
+		s->st_size = priv->filesize;
+	else
+		s->st_size = FILESIZE_MAX;
 
 	tftp_do_close(priv);
 

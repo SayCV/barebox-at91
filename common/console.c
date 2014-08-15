@@ -25,11 +25,14 @@
 #include <console.h>
 #include <driver.h>
 #include <fs.h>
+#include <of.h>
 #include <init.h>
 #include <clock.h>
 #include <kfifo.h>
 #include <module.h>
 #include <poller.h>
+#include <magicvar.h>
+#include <globalvar.h>
 #include <linux/list.h>
 #include <linux/stringify.h>
 #include <debug_ll.h>
@@ -62,22 +65,29 @@ static int console_std_set(struct device_d *dev, struct param_d *param,
 	char active[4];
 	unsigned int flag = 0, i = 0;
 
-	if (!val)
-		dev_param_set_generic(dev, param, NULL);
+	if (val) {
+		if (strchr(val, 'i') && cdev->getc) {
+			active[i++] = 'i';
+			flag |= CONSOLE_STDIN;
+		}
 
-	if (strchr(val, 'i') && cdev->f_caps & CONSOLE_STDIN) {
-		active[i++] = 'i';
-		flag |= CONSOLE_STDIN;
+		if (cdev->putc) {
+			if (strchr(val, 'o')) {
+				active[i++] = 'o';
+				flag |= CONSOLE_STDOUT;
+			}
+
+			if (strchr(val, 'e')) {
+				active[i++] = 'e';
+				flag |= CONSOLE_STDERR;
+			}
+		}
 	}
 
-	if (strchr(val, 'o') && cdev->f_caps & CONSOLE_STDOUT) {
-		active[i++] = 'o';
-		flag |= CONSOLE_STDOUT;
-	}
-
-	if (strchr(val, 'e') && cdev->f_caps & CONSOLE_STDERR) {
-		active[i++] = 'e';
-		flag |= CONSOLE_STDERR;
+	if (flag && !cdev->f_active) {
+		/* The device is being activated, set its baudrate */
+		if (cdev->setbrg)
+			cdev->setbrg(cdev, cdev->baudrate);
 	}
 
 	active[i] = 0;
@@ -88,9 +98,9 @@ static int console_std_set(struct device_d *dev, struct param_d *param,
 	if (initialized < CONSOLE_INIT_FULL) {
 		char ch;
 		initialized = CONSOLE_INIT_FULL;
-		PUTS_LL("Switch to console [");
-		PUTS_LL(dev_name(dev));
-		PUTS_LL("]\n");
+		puts_ll("Switch to console [");
+		puts_ll(dev_name(dev));
+		puts_ll("]\n");
 		barebox_banner();
 		while (kfifo_getc(console_output_fifo, &ch) == 0)
 			console_putc(CONSOLE_STDOUT, ch);
@@ -104,6 +114,10 @@ static int console_baudrate_set(struct param_d *param, void *priv)
 	struct console_device *cdev = priv;
 	unsigned char c;
 
+	/*
+	 * If the device is already active, change its baudrate.
+	 * The baudrate of an inactive device will be set at activation time.
+	 */
 	if (cdev->f_active) {
 		printf("## Switch baudrate to %d bps and press ENTER ...\n",
 			cdev->baudrate);
@@ -113,8 +127,7 @@ static int console_baudrate_set(struct param_d *param, void *priv)
 		do {
 			c = getc();
 		} while (c != '\r' && c != '\n');
-	} else
-		cdev->setbrg(cdev, cdev->baudrate);
+	}
 
 	return 0;
 }
@@ -129,6 +142,42 @@ static void console_init_early(void)
 	initialized = CONSOLE_INITIALIZED_BUFFER;
 }
 
+static void console_set_stdoutpath(struct console_device *cdev)
+{
+	int id;
+	char *str;
+
+	if (!cdev->linux_console_name)
+		return;
+
+	id = of_alias_get_id(cdev->dev->device_node, "serial");
+	if (id < 0)
+		return;
+
+	str = asprintf("console=%s%d,%dn8", cdev->linux_console_name,
+			id, cdev->baudrate);
+
+	globalvar_add_simple("linux.bootargs.console", str);
+
+	free(str);
+}
+
+static int __console_puts(struct console_device *cdev, const char *s)
+{
+	int n = 0;
+
+	while (*s) {
+		if (*s == '\n') {
+			cdev->putc(cdev, '\r');
+			n++;
+		}
+		cdev->putc(cdev, *s);
+		n++;
+		s++;
+	}
+	return n;
+}
+
 int console_register(struct console_device *newcdev)
 {
 	struct device_d *dev = &newcdev->class_dev;
@@ -137,8 +186,14 @@ int console_register(struct console_device *newcdev)
 	if (initialized == CONSOLE_UNINITIALIZED)
 		console_init_early();
 
-	dev->id = DEVICE_ID_DYNAMIC;
-	strcpy(dev->name, "cs");
+	if (newcdev->devname) {
+		dev->id = DEVICE_ID_SINGLE;
+		strcpy(dev->name, newcdev->devname);
+	} else {
+		dev->id = DEVICE_ID_DYNAMIC;
+		strcpy(dev->name, "cs");
+	}
+
 	if (newcdev->dev)
 		dev->parent = newcdev->dev;
 	platform_device_register(dev);
@@ -149,6 +204,9 @@ int console_register(struct console_device *newcdev)
 			NULL, &newcdev->baudrate, "%u", newcdev);
 	}
 
+	if (newcdev->putc && !newcdev->puts)
+		newcdev->puts = __console_puts;
+
 	dev_add_param(dev, "active", console_std_set, NULL, 0);
 
 	if (IS_ENABLED(CONFIG_CONSOLE_ACTIVATE_FIRST)) {
@@ -158,13 +216,19 @@ int console_register(struct console_device *newcdev)
 		activate = 1;
 	}
 
-	if (newcdev->dev && of_device_is_stdout_path(newcdev->dev))
+	if (newcdev->dev && of_device_is_stdout_path(newcdev->dev)) {
 		activate = 1;
+		console_set_stdoutpath(newcdev);
+	}
 
 	list_add_tail(&newcdev->list, &console_list);
 
-	if (activate)
-		dev_set_param(dev, "active", "ioe");
+	if (activate) {
+		if (IS_ENABLED(CONFIG_PARAMETER))
+			dev_set_param(dev, "active", "ioe");
+		else
+			console_std_set(dev, NULL, "ioe");
+	}
 
 	return 0;
 }
@@ -224,6 +288,9 @@ int getc(void)
 	unsigned char ch;
 	uint64_t start;
 
+	if (unlikely(!console_is_input_allow()))
+		return -EPERM;
+
 	/*
 	 * For 100us we read the characters from the serial driver
 	 * into a kfifo. This helps us not to lose characters
@@ -258,6 +325,9 @@ EXPORT_SYMBOL(fgetc);
 
 int tstc(void)
 {
+	if (unlikely(!console_is_input_allow()))
+		return 0;
+
 	return kfifo_len(console_input_fifo) || tstc_raw();
 }
 EXPORT_SYMBOL(tstc);
@@ -274,7 +344,7 @@ void console_putc(unsigned int ch, char c)
 
 	case CONSOLE_INITIALIZED_BUFFER:
 		kfifo_putc(console_output_fifo, c);
-		PUTC_LL(c);
+		putc_ll(c);
 		return;
 
 	case CONSOLE_INIT_FULL:
@@ -297,8 +367,18 @@ EXPORT_SYMBOL(console_putc);
 
 int console_puts(unsigned int ch, const char *str)
 {
+	struct console_device *cdev;
 	const char *s = str;
 	int n = 0;
+
+	if (initialized == CONSOLE_INIT_FULL) {
+		for_each_console(cdev) {
+			if (cdev->f_active & ch) {
+				n = cdev->puts(cdev, str);
+			}
+		}
+		return n;
+	}
 
 	while (*s) {
 		if (*s == '\n') {
@@ -336,3 +416,6 @@ int ctrlc (void)
 }
 EXPORT_SYMBOL(ctrlc);
 #endif /* ARCH_HAS_CTRC */
+
+BAREBOX_MAGICVAR_NAMED(global_linux_bootargs_console, global.linux.bootargs.console,
+		"console= argument for Linux from the linux,stdout-path property in /chosen node");

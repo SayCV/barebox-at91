@@ -20,6 +20,11 @@
 *.elf
 *.mcp
 *.orig
+*.bct
+*.dcd
+*.dcd.S
+*.bbenv
+*.bbenv.*
 
 #
 # Top-level generic files
@@ -41,10 +46,17 @@ barebox.uimage
 barebox.map
 barebox.kwb
 barebox.kwbuart
+barebox.efi
+barebox.canon-a1100.bin
 barebox-flash-image
 System.map
 Module.symvers
 barebox_default_env*
+
+#
+# git files that we don't want to ignore even it they are dot-files
+#
+!.gitignore
 
 #
 # Generated include files
@@ -56,7 +68,8 @@ include/linux/compile.h
 include/generated
 
 # Generated files
-Doxyfile.version
+Documentation/commands/*.rst
+doctrees/
 
 # stgit generated dirs
 patches-*

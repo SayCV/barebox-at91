@@ -33,7 +33,7 @@
 
 #ifdef STATIC
 #include <linux/decompress/mm.h>
-#include "lzo/lzo1x_decompress.c"
+#include "lzo/lzo1x_decompress_safe.c"
 #else
 #include <malloc.h>
 #endif
@@ -56,7 +56,6 @@ static inline int parse_header(u8 *input, int *skip, int in_len)
 	int l;
 	u8 *parse = input;
 	u8 *end = input + in_len;
-	u8 level = 0;
 	u16 version;
 
 	/*
@@ -78,7 +77,7 @@ static inline int parse_header(u8 *input, int *skip, int in_len)
 	version = get_unaligned_be16(parse);
 	parse += 7;
 	if (version >= 0x0940)
-		level = *parse++;
+		parse++;
 	if (get_unaligned_be32(parse) & HEADER_HAS_FILTER)
 		parse += 8; /* flags + filter info */
 	else
@@ -108,7 +107,7 @@ static inline int parse_header(u8 *input, int *skip, int in_len)
 	return 1;
 }
 
-STATIC int decompress_unlzo(u8 *input, int in_len,
+int decompress_unlzo(u8 *input, int in_len,
 				int (*fill) (void *, unsigned int),
 				int (*flush) (void *, unsigned int),
 				u8 *output, int *posp,

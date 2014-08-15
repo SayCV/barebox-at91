@@ -80,25 +80,56 @@ static int platform_ide_probe(struct device_d *dev)
 {
 	int rc;
 	struct ide_port_info *pdata = dev->platform_data;
-	struct ata_ioports *io;
+	struct ide_port *ide;
 	void *reg_base, *alt_base;
+	struct resource *reg, *alt;
+	int mmio;
 
 	if (pdata == NULL) {
 		dev_err(dev, "No platform data. Cannot continue\n");
 		return -EINVAL;
 	}
 
-	io = xzalloc(sizeof(struct ata_ioports));
-	reg_base = dev_request_mem_region(dev, 0);
-	alt_base = dev_request_mem_region(dev, 1);
-	platform_ide_setup_port(reg_base, alt_base, io, pdata->ioport_shift);
-	io->reset = pdata->reset;
-	io->dataif_be = pdata->dataif_be;
+	alt = NULL;
+	reg = dev_get_resource(dev, IORESOURCE_MEM, 0);
+	mmio = (reg != NULL);
+	if (reg != NULL) {
+		reg = request_iomem_region(dev_name(dev), reg->start,
+					   reg->end);
+		alt = dev_get_resource(dev, IORESOURCE_MEM, 1);
+		if (alt != NULL)
+			alt = request_iomem_region(dev_name(dev), alt->start,
+						   alt->end);
+	} else {
+		reg = dev_get_resource(dev, IORESOURCE_IO, 0);
+		if (reg != NULL) {
+			reg = request_ioport_region(dev_name(dev), reg->start,
+						    reg->end);
+			alt = dev_get_resource(dev, IORESOURCE_IO, 1);
+			if (alt != NULL)
+				alt = request_ioport_region(dev_name(dev),
+							    alt->start,
+							    alt->end);
+		}
+	}
 
-	rc = ide_port_register(dev, io);
+	reg_base = (reg != NULL ? (void __force __iomem *) reg->start : NULL);
+	alt_base = (alt != NULL ? (void __force __iomem *) alt->start : NULL);
+
+	if (!reg_base)
+		return -ENODEV;
+
+	ide = xzalloc(sizeof(*ide));
+	ide->io.mmio = mmio;
+
+	platform_ide_setup_port(reg_base, alt_base, &ide->io, pdata->ioport_shift);
+	ide->io.reset = pdata->reset;
+	ide->io.dataif_be = pdata->dataif_be;
+
+	rc = ide_port_register(ide);
 	if (rc != 0) {
 		dev_err(dev, "Cannot register IDE interface\n");
-		free(io);
+		free(ide);
 	}
 
 	return rc;
@@ -125,6 +156,4 @@ device_platform_driver(platform_ide_driver);
  *
  * This driver does not change any access timings due to the fact it has no idea
  * how to do so. So, do not expect an impressive data throughput.
- *
- * @todo Support also the IO port access method, the x86 architecture is using
  */

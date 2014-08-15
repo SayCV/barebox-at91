@@ -442,6 +442,7 @@ struct soc_type {
 };
 
 static struct soc_type socs[] = {
+	{ .name = "imx25", .header_version = 1, },
 	{ .name = "imx35", .header_version = 1, },
 	{ .name = "imx51", .header_version = 1, },
 	{ .name = "imx53", .header_version = 2, },
@@ -492,14 +493,42 @@ struct command cmds[] = {
 	},
 };
 
+static char *readcmd(FILE *f)
+{
+	static char *buf;
+	char *str;
+	ssize_t ret;
+
+	if (!buf) {
+		buf = malloc(4096);
+		if (!buf)
+			return NULL;
+	}
+
+	str = buf;
+	*str = 0;
+
+	while (1) {
+		ret = fread(str, 1, 1, f);
+		if (!ret)
+			return strlen(buf) ? buf : NULL;
+
+		if (*str == '\n' || *str == ';') {
+			*str = 0;
+			return buf;
+		}
+
+		str++;
+	}
+}
+
 static int parse_config(const char *filename)
 {
 	FILE *f;
 	int lineno = 0;
 	char *line = NULL, *tmp;
-	size_t len;
 	char *argv[MAXARGS];
-	int nargs, i, ret;
+	int nargs, i, ret = 0;
 
 	f = fopen(filename, "r");
 	if (!f) {
@@ -507,13 +536,14 @@ static int parse_config(const char *filename)
 		exit(1);
 	}
 
-	while ((getline(&line, &len, f)) > 0) {
+	while (1) {
+		line = readcmd(f);
+		if (!line)
+			break;
+
 		lineno++;
 
 		tmp = strchr(line, '#');
-		if (tmp)
-			*tmp = 0;
-		tmp = strrchr(line, '\n');
 		if (tmp)
 			*tmp = 0;
 
@@ -529,7 +559,7 @@ static int parse_config(const char *filename)
 				if (ret) {
 					fprintf(stderr, "error in line %d: %s\n",
 							lineno, strerror(-ret));
-					return ret;
+					goto cleanup;
 				}
 				break;
 			}
@@ -537,11 +567,13 @@ static int parse_config(const char *filename)
 
 		if (ret == -ENOENT) {
 			fprintf(stderr, "no such command: %s\n", argv[0]);
-			return ret;
+			goto cleanup;
 		}
 	}
 
-	return 0;
+cleanup:
+	fclose(f);
+	return ret;
 }
 
 static int xread(int fd, void *buf, int len)
@@ -603,7 +635,7 @@ int main(int argc, char *argv[])
 	char *imagename = NULL;
 	char *outfile = NULL;
 	void *buf;
-	size_t image_size = 0;
+	size_t image_size = 0, load_size;
 	struct stat s;
 	int infd, outfd;
 	int dcd_only = 0;
@@ -685,12 +717,22 @@ int main(int argc, char *argv[])
 		exit (0);
 	}
 
+	/*
+	 * Add 0x1000 to the image size for the DCD.
+	 * Align up to a 4k boundary, because:
+	 * - at least i.MX5 NAND boot only reads full NAND pages and misses the
+	 *   last partial NAND page.
+	 * - i.MX6 SPI NOR boot corrupts the last few bytes of an image loaded
+	 *   in ver funy ways when the image size is not 4 byte aligned
+	 */
+	load_size = ((image_size + 0x1000) + 0xfff) & ~0xfff;
+
 	switch (header_version) {
 	case 1:
-		add_header_v1(buf, image_dcd_offset, image_load_addr, image_size + 0x1000);
+		add_header_v1(buf, image_dcd_offset, image_load_addr, load_size);
 		break;
 	case 2:
-		add_header_v2(buf, image_dcd_offset, image_load_addr, image_size + 0x1000);
+		add_header_v2(buf, image_dcd_offset, image_load_addr, load_size);
 		break;
 	default:
 		fprintf(stderr, "Congratulations! You're welcome to implement header version %d\n",

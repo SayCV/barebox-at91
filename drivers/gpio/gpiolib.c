@@ -50,22 +50,33 @@ int gpio_request(unsigned gpio, const char *label)
 	struct gpio_info *gi = gpio_to_desc(gpio);
 	int ret;
 
-	if (!gi)
-		return -ENODEV;
+	if (!gi) {
+		ret = -ENODEV;
+		goto done;
+	}
 
-	if (gi->requested)
-		return -EBUSY;
+	if (gi->requested) {
+		ret = -EBUSY;
+		goto done;
+	}
+
+	ret = 0;
 
 	if (gi->chip->ops->request) {
 		ret = gi->chip->ops->request(gi->chip, gpio - gi->chip->base);
 		if (ret)
-			return ret;
+			goto done;
 	}
 
 	gi->requested = true;
 	gi->label = xstrdup(label);
 
-	return 0;
+done:
+	if (ret)
+		pr_err("_gpio_request: gpio-%d (%s) status %d\n",
+			 gpio, label ? : "?", ret);
+
+	return ret;
 }
 
 void gpio_free(unsigned gpio)
@@ -83,7 +94,74 @@ void gpio_free(unsigned gpio)
 
 	gi->requested = false;
 	free(gi->label);
+	gi->label = NULL;
 }
+
+/**
+ * gpio_request_one - request a single GPIO with initial configuration
+ * @gpio:	the GPIO number
+ * @flags:	GPIO configuration as specified by GPIOF_*
+ * @label:	a literal description string of this GPIO
+ */
+int gpio_request_one(unsigned gpio, unsigned long flags, const char *label)
+{
+	int err;
+
+	err = gpio_request(gpio, label);
+	if (err)
+		return err;
+
+	if (flags & GPIOF_DIR_IN)
+		err = gpio_direction_input(gpio);
+	else
+		err = gpio_direction_output(gpio,
+				(flags & GPIOF_INIT_HIGH) ? 1 : 0);
+
+	if (err)
+		goto free_gpio;
+
+	return 0;
+
+ free_gpio:
+	gpio_free(gpio);
+	return err;
+}
+EXPORT_SYMBOL_GPL(gpio_request_one);
+
+/**
+ * gpio_request_array - request multiple GPIOs in a single call
+ * @array:	array of the 'struct gpio'
+ * @num:	how many GPIOs in the array
+ */
+int gpio_request_array(const struct gpio *array, size_t num)
+{
+	int i, err;
+
+	for (i = 0; i < num; i++, array++) {
+		err = gpio_request_one(array->gpio, array->flags, array->label);
+		if (err)
+			goto err_free;
+	}
+	return 0;
+
+err_free:
+	while (i--)
+		gpio_free((--array)->gpio);
+	return err;
+}
+EXPORT_SYMBOL_GPL(gpio_request_array);
+
+/**
+ * gpio_free_array - release multiple GPIOs in a single call
+ * @array:	array of the 'struct gpio'
+ * @num:	how many GPIOs in the array
+ */
+void gpio_free_array(const struct gpio *array, size_t num)
+{
+	while (num--)
+		gpio_free((array++)->gpio);
+}
+EXPORT_SYMBOL_GPL(gpio_free_array);
 
 void gpio_set_value(unsigned gpio, int value)
 {
@@ -227,32 +305,43 @@ static int do_gpiolib(int argc, char *argv[])
 {
 	int i;
 
-	printf("gpiolib: gpio lists\n");
-	printf("%*crequested  label\n", 11, ' ');
-
 	for (i = 0; i < ARCH_NR_GPIOS; i++) {
 		struct gpio_info *gi = &gpio_desc[i];
+		int val = -1, dir = -1;
 
 		if (!gi->chip)
 			continue;
 
-		printf("gpio %*d: %*s  %s\n", 4,
-			i, 9, gi->requested ? "true" : "false",
-			gi->label ? gi->label : "");
+		/* print chip information and header on first gpio */
+		if (gi->chip->base == i) {
+			printf("\nGPIOs %u-%u, chip %s:\n",
+				gi->chip->base,
+				gi->chip->base + gi->chip->ngpio - 1,
+				gi->chip->dev->name);
+			printf("%*cdir val requested  label\n", 13, ' ');
+		}
+
+		if (gi->chip->ops->get_direction)
+			dir = gi->chip->ops->get_direction(gi->chip,
+						i - gi->chip->base);
+		if (gi->chip->ops->get)
+			val = gi->chip->ops->get(gi->chip,
+						i - gi->chip->base);
+
+		printf("  GPIO %*d: %*s %*s %*s  %s\n", 4, i,
+			3, (dir < 0) ? "unk" : ((dir == GPIOF_DIR_IN) ? "in" : "out"),
+			3, (val < 0) ? "unk" : ((val == 0) ? "lo" : "hi"),
+			9, gi->requested ? "true" : "false",
+			(gi->requested && gi->label) ? gi->label : "");
 	}
 
 	return 0;
 }
 
-BAREBOX_CMD_HELP_START(gpiolib)
-BAREBOX_CMD_HELP_USAGE("gpiolib\n")
-BAREBOX_CMD_HELP_SHORT("dump current registered gpio\n");
-BAREBOX_CMD_HELP_END
-
-BAREBOX_CMD_START(gpiolib)
+BAREBOX_CMD_START(gpioinfo)
 	.cmd		= do_gpiolib,
-	.usage		= "dump current registered gpio",
-	BAREBOX_CMD_HELP(cmd_gpiolib_help)
+	BAREBOX_CMD_DESC("list registered GPIOs")
+	BAREBOX_CMD_GROUP(CMD_GRP_INFO)
 	BAREBOX_CMD_COMPLETE(empty_complete)
 BAREBOX_CMD_END
 #endif

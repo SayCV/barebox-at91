@@ -7,6 +7,21 @@
 #include <linux/list.h>
 #include <environment.h>
 
+struct bootm_data {
+	const char *os_file;
+	const char *initrd_file;
+	const char *oftree_file;
+	int verbose;
+	bool verify;
+	bool force;
+	bool dryrun;
+	unsigned long initrd_address;
+	unsigned long os_address;
+	unsigned long os_entry;
+};
+
+int bootm_boot(struct bootm_data *data);
+
 struct image_data {
 	/* simplest case. barebox has already loaded the os here */
 	struct resource *os_res;
@@ -41,11 +56,17 @@ struct image_data {
 
 	unsigned long initrd_address;
 
+	char *oftree_file;
+	int oftree_num;
+
 	struct device_node *of_root_node;
 	struct fdt_header *oftree;
+	struct resource *oftree_res;
 
 	int verify;
 	int verbose;
+	int force;
+	int dryrun;
 };
 
 struct image_handler {
@@ -87,5 +108,11 @@ static inline int linux_bootargs_overwrite(const char *bootargs)
 	return setenv("bootargs", bootargs);
 }
 #endif
+
+int bootm_load_os(struct image_data *data, unsigned long load_address);
+int bootm_load_initrd(struct image_data *data, unsigned long load_address);
+int bootm_load_devicetree(struct image_data *data, unsigned long load_address);
+
+#define UIMAGE_SOME_ADDRESS (UIMAGE_INVALID_ADDRESS - 1)
 
 #endif /* __BOOT_H */

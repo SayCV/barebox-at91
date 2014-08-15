@@ -30,6 +30,7 @@
 #include <ata_drive.h>
 #include <platform_ide.h>
 #include <io.h>
+#include <of.h>
 #include <linux/err.h>
 #include <linux/clk.h>
 
@@ -76,9 +77,6 @@ static void pata_imx_set_bus_timing(void __iomem *base, unsigned long clkrate,
 		unsigned char mode)
 {
 	uint32_t T = 1000000000 / clkrate;
-
-	struct mxc_ata_config_regs *ata_regs;
-	ata_regs = (struct mxc_ata_config_regs *)base;
 
 	if (mode >= ARRAY_SIZE(pio_t1))
 		return;
@@ -146,14 +144,22 @@ static void imx_pata_setup_port(void *reg_base, void *alt_base,
 	}
 }
 
+static int pata_imx_detect(struct device_d *dev)
+{
+	struct ide_port *ide = dev->priv;
+
+	return ata_port_detect(&ide->port);
+}
+
 static int imx_pata_probe(struct device_d *dev)
 {
-	struct ata_ioports *io;
+	struct ide_port *ide;
 	struct clk *clk;
 	void __iomem *base;
 	int ret;
+	const char *devname = NULL;
 
-	io = xzalloc(sizeof(struct ata_ioports));
+	ide = xzalloc(sizeof(*ide));
 	base = dev_request_mem_region(dev, 0);
 
 	clk = clk_get(dev, NULL);
@@ -163,7 +169,7 @@ static int imx_pata_probe(struct device_d *dev)
 	}
 
 	imx_pata_setup_port(base + PATA_IMX_DRIVE_DATA,
-			base + PATA_IMX_DRIVE_CONTROL, io, 2);
+			base + PATA_IMX_DRIVE_CONTROL, &ide->io, 2);
 
 	/* deassert resets */
 	writel(PATA_IMX_ATA_CTRL_FIFO_RST_B |
@@ -172,7 +178,19 @@ static int imx_pata_probe(struct device_d *dev)
 
 	pata_imx_set_bus_timing(base, clk_get_rate(clk), 4);
 
-	ret= ide_port_register(dev, io);
+	if (IS_ENABLED(CONFIG_OFDEVICE)) {
+		devname = of_alias_get(dev->device_node);
+		if (devname)
+			devname = xstrdup(devname);
+	}
+
+	ide->port.dev = dev;
+	ide->port.devname = devname;
+
+	dev->priv = ide;
+	dev->detect = pata_imx_detect;
+
+	ret = ide_port_register(ide);
 	if (ret) {
 		dev_err(dev, "Cannot register IDE interface: %s\n",
 				strerror(-ret));
@@ -185,13 +203,22 @@ out_free_clk:
 	clk_put(clk);
 
 out_free:
-	free(io);
+	free(ide);
 
 	return ret;
 }
 
+static __maybe_unused struct of_device_id imx_pata_dt_ids[] = {
+	{
+		.compatible = "fsl,imx27-pata",
+	}, {
+		/* sentinel */
+	},
+};
+
 static struct driver_d imx_pata_driver = {
 	.name   = "imx-pata",
 	.probe  = imx_pata_probe,
+	.of_compatible = DRV_OF_COMPAT(imx_pata_dt_ids),
 };
 device_platform_driver(imx_pata_driver);

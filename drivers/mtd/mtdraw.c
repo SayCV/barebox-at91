@@ -58,7 +58,7 @@
  *  - no actual mtd->write if done
  * A second write of 512 bytes triggers:
  *  - copy of the 16 first bytes into writebuf
- *  - a mtd->write_oob() from writebuf
+ *  - a mtd_write_oob() from writebuf
  *  - empty writebuf
  *  - copy the remaining 496 bytes into writebuf
  *    => write_fill = 496, write_ofs = offset + 528
@@ -97,13 +97,13 @@ static ssize_t mtdraw_read_unaligned(struct mtd_info *mtd, void *dst,
 		tmp = malloc(mtd->writesize + mtd->oobsize);
 	if (!tmp)
 		return -ENOMEM;
-	ops.mode = MTD_OOB_RAW;
+	ops.mode = MTD_OPS_RAW;
 	ops.ooboffs = 0;
 	ops.datbuf = tmp;
 	ops.len = mtd->writesize;
 	ops.oobbuf = tmp + mtd->writesize;
 	ops.ooblen = mtd->oobsize;
-	ret = mtd->read_oob(mtd, offset, &ops);
+	ret = mtd_read_oob(mtd, offset, &ops);
 	if (ret)
 		goto err;
 	if (partial)
@@ -152,13 +152,13 @@ static ssize_t mtdraw_blkwrite(struct mtd_info *mtd, const void *buf,
 	struct mtd_oob_ops ops;
 	int ret;
 
-	ops.mode = MTD_OOB_RAW;
+	ops.mode = MTD_OPS_RAW;
 	ops.ooboffs = 0;
 	ops.datbuf = (void *)buf;
 	ops.len = mtd->writesize;
 	ops.oobbuf = (void *)buf + mtd->writesize;
 	ops.ooblen = mtd->oobsize;
-	ret = mtd->write_oob(mtd, offset, &ops);
+	ret = mtd_write_oob(mtd, offset, &ops);
 	if (!ret)
 		ret = ops.retlen + ops.oobretlen;
 	return ret;
@@ -278,7 +278,6 @@ static const struct file_operations mtd_raw_fops = {
 	.read		= mtdraw_read,
 	.write		= mtdraw_write,
 	.erase		= mtdraw_erase,
-	.ioctl		= mtd_ioctl,
 	.lseek		= dev_lseek_default,
 };
 
@@ -286,14 +285,17 @@ static int add_mtdraw_device(struct mtd_info *mtd, char *devname, void **priv)
 {
 	struct mtdraw *mtdraw;
 
+	if (mtd->master || mtd->oobsize == 0)
+		return 0;
+
 	mtdraw = xzalloc(sizeof(*mtdraw));
 	mtdraw->writebuf = xmalloc(RAW_WRITEBUF_SIZE);
 	mtdraw->mtd = mtd;
 
 	mtdraw->cdev.ops = (struct file_operations *)&mtd_raw_fops;
-	mtdraw->cdev.size = mtd->size / mtd->writesize *
+	mtdraw->cdev.size = mtd_div_by_wb(mtd->size, mtd) *
 		(mtd->writesize + mtd->oobsize);
-	mtdraw->cdev.name = asprintf("%sraw%d", devname, mtd->class_dev.id);
+	mtdraw->cdev.name = asprintf("%s.raw", mtd->cdev.name);
 	mtdraw->cdev.priv = mtdraw;
 	mtdraw->cdev.dev = &mtd->class_dev;
 	mtdraw->cdev.mtd = mtd;
@@ -306,6 +308,9 @@ static int add_mtdraw_device(struct mtd_info *mtd, char *devname, void **priv)
 static int del_mtdraw_device(struct mtd_info *mtd, void **priv)
 {
 	struct mtdraw *mtdraw;
+
+	if (mtd->master || mtd->oobsize == 0)
+		return 0;
 
 	mtdraw = *priv;
 	devfs_remove(&mtdraw->cdev);

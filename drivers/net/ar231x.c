@@ -217,7 +217,7 @@ static int ar231x_eth_recv(struct eth_device *edev)
 			u16 length =
 				((status >> DMA_RX_LEN_SHIFT) & 0x3fff)
 				- CRC_LEN;
-			net_receive((void *)rxdsc->buffer_ptr, length);
+			net_receive(edev, (void *)rxdsc->buffer_ptr, length);
 		}
 		/* Clean descriptor. now it is owned by DMA. */
 		priv->next_rxdsc = (struct ar231x_descr *)rxdsc->next_dsc_ptr;
@@ -419,15 +419,9 @@ static int ar231x_eth_probe(struct device_d *dev)
 	return 0;
 }
 
-static void ar231x_eth_remove(struct device_d *dev)
-{
-
-}
-
 static struct driver_d ar231x_eth_driver = {
 	.name = "ar231x_eth",
 	.probe = ar231x_eth_probe,
-	.remove = ar231x_eth_remove,
 };
 
 static int ar231x_eth_driver_init(void)

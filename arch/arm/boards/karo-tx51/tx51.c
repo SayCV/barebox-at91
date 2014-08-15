@@ -20,7 +20,7 @@
 #include <environment.h>
 #include <mach/imx51-regs.h>
 #include <fec.h>
-#include <mach/gpio.h>
+#include <gpio.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
 #include <partition.h>
@@ -249,7 +249,6 @@ static int tx51_devices_init(void)
 	tx51_leds_init();
 
 	//Linux Parameters
-	armlinux_set_bootparams((void *)MX51_CSD0_BASE_ADDR + 0x100);
 	armlinux_set_architecture(MACH_TYPE_TX51);
 
 	return 0;
@@ -271,6 +270,10 @@ static int tx51_console_init(void)
 {
 	imx51_init_lowlevel(800);
 	mxc_iomux_v3_setup_multiple_pads(tx51_pads, ARRAY_SIZE(tx51_pads));
+
+	barebox_set_model("Ka-Ro TX51");
+	barebox_set_hostname("tx51");
+
 	imx51_add_uart0();
 
 	return 0;

@@ -9,7 +9,7 @@
  */
 
  /* Clocks */
-extern int __init at91_clock_init(unsigned long main_clock);
+extern int __init at91_clock_init(void);
 
 static inline struct device_d *at91_add_rm9200_gpio(int id, resource_size_t start)
 {
@@ -36,15 +36,4 @@ static inline struct device_d *at91_add_sam9_smc(int id, resource_size_t start,
 				  IORESOURCE_MEM, NULL);
 }
 
-#ifdef CONFIG_AT91_FUSE
-static inline struct device_d *at91_add_fuse(resource_size_t start, int nb)
-{
-	return add_generic_device("at91-fuse", DEVICE_ID_SINGLE, NULL, start, 0x100,
-				  IORESOURCE_MEM, (void*)nb);
-}
-#else
-static inline struct device_d *at91_add_fuse(resource_size_t start, int nb)
-{
-	return NULL;
-}
-#endif
+void at91_rtt_irq_fixup(void *base);

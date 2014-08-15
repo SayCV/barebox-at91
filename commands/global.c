@@ -23,21 +23,6 @@
 #include <environment.h>
 #include <getopt.h>
 
-static int globalvar_set(char* name, char* value)
-{
-	int ret;
-
-	ret = globalvar_add_simple(name);
-
-	if (value) {
-		char *tmp = asprintf("global.%s", name);
-		ret = setenv(tmp, value);
-		free(tmp);
-	}
-
-	return ret ? 1 : 0;
-}
-
 static int do_global(int argc, char *argv[])
 {
 	int opt;
@@ -72,17 +57,20 @@ static int do_global(int argc, char *argv[])
 		return 0;
 	}
 
-	return globalvar_set(argv[0], value);
+	return globalvar_add_simple(argv[0], value);
 }
 
 BAREBOX_CMD_HELP_START(global)
-BAREBOX_CMD_HELP_USAGE("global [-r] <var>[=<value]\n")
-BAREBOX_CMD_HELP_SHORT("add a new global variable named <var>, optionally set to <value>\n")
-BAREBOX_CMD_HELP_SHORT("-r to set a value to of all globalvars beginning with 'match'")
+BAREBOX_CMD_HELP_TEXT("Add a new global variable named VAR, optionally set to VALUE.")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT("-r", "set value of all global variables beginning with 'match'")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(global)
 	.cmd		= do_global,
-	.usage		= "create or set global variables",
+	BAREBOX_CMD_DESC("create or set global variables")
+	BAREBOX_CMD_OPTS("[-r] VAR[=VALUE]")
+	BAREBOX_CMD_GROUP(CMD_GRP_ENV)
 	BAREBOX_CMD_HELP(cmd_global_help)
 BAREBOX_CMD_END

@@ -21,6 +21,7 @@
 #include <fs.h>
 #include <globalvar.h>
 #include <libbb.h>
+#include <libfile.h>
 #include <magicvar.h>
 
 #include <asm/armlinux.h>
@@ -104,8 +105,8 @@ void cfa10036_detect_hw(void)
 		return;
 	}
 
-	globalvar_add_simple("board.variant");
-	setenv("global.board.variant", board_name);
+	globalvar_add_simple("board.variant", board_name);
+
 	pr_info("Booting on a CFA10036 with %s\n", board_name);
 }
 

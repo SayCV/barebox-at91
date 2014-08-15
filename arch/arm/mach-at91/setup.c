@@ -15,6 +15,7 @@
 #include <mach/bootmode.h>
 
 #include "soc.h"
+#include "generic.h"
 
 struct at91_init_soc __initdata at91_boot_soc;
 
@@ -163,6 +164,9 @@ static void __init soc_detect(u32 dbgu_base)
 		case ARCH_EXID_SAMA5D35:
 			at91_soc_initdata.subtype = AT91_SOC_SAMA5D35;
 			break;
+		case ARCH_EXID_SAMA5D36:
+			at91_soc_initdata.subtype = AT91_SOC_SAMA5D36;
+			break;
 		}
 	}
 }
@@ -205,6 +209,7 @@ static const char *soc_subtype_name[] = {
 	[AT91_SOC_SAMA5D33]	= "sama5d33",
 	[AT91_SOC_SAMA5D34]	= "sama5d34",
 	[AT91_SOC_SAMA5D35]	= "sama5d35",
+	[AT91_SOC_SAMA5D36]	= "sama5d36",
 	[AT91_SOC_SUBTYPE_NONE]	= "Unknown"
 };
 
@@ -233,6 +238,9 @@ static int at91_detect(void)
 
 	if (!at91_soc_is_enabled())
 		panic("AT91: Soc not enabled");
+
+	/* Init clock subsystem */
+	at91_clock_init();
 
 	if (at91_boot_soc.init)
 		at91_boot_soc.init();

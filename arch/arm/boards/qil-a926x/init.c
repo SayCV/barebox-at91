@@ -15,7 +15,7 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
@@ -25,6 +25,7 @@
 #include <gpio.h>
 #include <led.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91_pmc.h>
 #include <mach/at91_rstc.h>
 
@@ -202,7 +203,6 @@ static int qil_a9260_devices_init(void)
 	ek_add_device_button();
 	qil_a9260_add_device_mb();
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	qil_a9260_set_board_type();
 
 	devfs_add_partition("nand0", 0x00000, SZ_128K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
@@ -238,3 +238,18 @@ static int qil_a9260_console_init(void)
 }
 console_initcall(qil_a9260_console_init);
 #endif
+
+static int qil_a9260_main_clock(void)
+{
+	if (machine_is_qil_a9g20()) {
+		barebox_set_model("Calao QIL-a9G20");
+		barebox_set_hostname("qil-a9g20");
+	} else {
+		barebox_set_model("Calao QIL-A9260");
+		barebox_set_hostname("qil-a9260");
+	}
+
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(qil_a9260_main_clock);

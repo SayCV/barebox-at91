@@ -456,6 +456,8 @@ static int s3c24x0_nand_probe(struct device_d *dev)
 	 */
 	chip->ecc.mode = NAND_ECC_HW;
 	chip->ecc.bytes = 3;	/* always 24 bit ECC per turn */
+	chip->ecc.strength  = 1;
+
 #ifdef CONFIG_CPU_S3C2440
 	if (readl(host->base) & 0x8) {
 		/* large page (2048 bytes per page) */
@@ -636,13 +638,11 @@ static int do_nand_boot_test(int argc, char *argv[])
 	return 0;
 }
 
-static const __maybe_unused char cmd_nand_boot_test_help[] =
-"Usage: nand_boot_test <dest> <size>\n";
-
 BAREBOX_CMD_START(nand_boot_test)
 	.cmd		= do_nand_boot_test,
-	.usage		= "load an image from NAND",
-	BAREBOX_CMD_HELP(cmd_nand_boot_test_help)
+	BAREBOX_CMD_DESC("load an image from NAND")
+	BAREBOX_CMD_OPTS("DEST SIZE")
+	BAREBOX_CMD_GROUP(CMD_GRP_BOOT)
 BAREBOX_CMD_END
 #endif
 

@@ -1,7 +1,7 @@
 #include <common.h>
 #include <gpio.h>
 #include <init.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <mach/at91_pmc.h>
 #include <mach/io.h>
 #include <mach/cpu.h>
@@ -357,11 +357,13 @@ static void __init sama5d3_register_clocks(void)
 
 	if ( cpu_is_sama5d33()
 	|| cpu_is_sama5d34()
-	|| cpu_is_sama5d35() )
+	|| cpu_is_sama5d35()
+	|| cpu_is_sama5d36())
 		clk_register(&macb0_clk);
 
 	if ( cpu_is_sama5d31()
-	|| cpu_is_sama5d35() )
+	|| cpu_is_sama5d35()
+	|| cpu_is_sama5d36())
 		clk_register(&macb1_clk);
 
 	if (!cpu_is_sama5d35())
@@ -460,9 +462,6 @@ static void sama5d3_boot_from(void)
 
 static void sama5d3_initialize(void)
 {
-	/* Init clock subsystem */
-	at91_clock_init(AT91_MAIN_CLOCK);
-
 	/* Register the processor-specific clocks */
 	sama5d3_register_clocks();
 

@@ -404,9 +404,9 @@ static ulong flash_get_size (struct flash_info *info)
 				erase_region_count, erase_region_size);
 
 			region->offset = cur_offset;
-			region->erasesize = erase_region_size;
+			region->erasesize = erase_region_size * size_ratio;
 			region->numblocks = erase_region_count;
-			cur_offset += erase_region_size * erase_region_count;
+			cur_offset += erase_region_size * size_ratio * erase_region_count;
 
 			/* increase the space malloced for the sector start addresses */
 			info->start = xrealloc(info->start, sizeof(ulong) * (erase_region_count + sect_cnt));
@@ -949,6 +949,8 @@ static int cfi_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 static void cfi_init_mtd(struct flash_info *info)
 {
 	struct mtd_info *mtd = &info->mtd;
+	u_int32_t erasesize;
+	int i;
 
 	mtd->read = cfi_mtd_read;
 	mtd->write = cfi_mtd_write;
@@ -956,7 +958,14 @@ static void cfi_init_mtd(struct flash_info *info)
 	mtd->lock = cfi_mtd_lock;
 	mtd->unlock = cfi_mtd_unlock;
 	mtd->size = info->size;
-	mtd->erasesize = info->eraseregions[1].erasesize; /* FIXME */
+
+	erasesize = 0;
+	for (i=0; i < info->numeraseregions; i++) {
+		if (erasesize < info->eraseregions[i].erasesize)
+			erasesize = info->eraseregions[i].erasesize;
+	}
+	mtd->erasesize = erasesize;
+
 	mtd->writesize = 1;
 	mtd->subpage_sft = 0;
 	mtd->eraseregions = info->eraseregions;
@@ -965,7 +974,7 @@ static void cfi_init_mtd(struct flash_info *info)
 	mtd->type = MTD_NORFLASH;
 	mtd->parent = info->dev;
 
-	add_mtd_device(mtd, "nor");
+	add_mtd_device(mtd, "nor", DEVICE_ID_DYNAMIC);
 }
 
 static int cfi_probe (struct device_d *dev)
@@ -978,8 +987,8 @@ static int cfi_probe (struct device_d *dev)
 	info->flash_id = FLASH_UNKNOWN;
 	info->cmd_reset = FLASH_CMD_RESET;
 	info->base = dev_request_mem_region(dev, 0);
-	info->size = flash_get_size(info);
 	info->dev = dev;
+	info->size = flash_get_size(info);
 
 	if (info->flash_id == FLASH_UNKNOWN) {
 		dev_warn(dev, "## Unknown FLASH on Bank at 0x%08x - Size = 0x%08lx = %ld MB\n",

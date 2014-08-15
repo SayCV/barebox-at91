@@ -18,9 +18,10 @@
 #ifndef __INCLUDE_ARCH_HARDWARE_H__
 #define   __INCLUDE_ARCH_HARDWARE_H__
 
-#define DEBUG_LL_UART_ADDR	0xb00003f8
-#define DEBUG_LL_UART_SHIFT	0
-#define DEBUG_LL_UART_DIVISOR	1	/* no matter for emulated port */
+#define MALTA_PIIX4_UART0	0xb80003f8
+
+#define MALTA_CBUS_UART	0xbf000900
+#define MALTA_CBUS_UART_SHIFT	3
 
 /*
  * Reset register.

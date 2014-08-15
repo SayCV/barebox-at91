@@ -20,6 +20,7 @@
 #include <common.h>
 #include <init.h>
 #include <io.h>
+#include <of.h>
 #include <pinctrl.h>
 #include <malloc.h>
 #include <mach/iomux-v3.h>
@@ -75,9 +76,9 @@ int mxc_iomux_v3_setup_pad(iomux_v3_cfg_t pad)
 EXPORT_SYMBOL(mxc_iomux_v3_setup_pad);
 
 
-int mxc_iomux_v3_setup_multiple_pads(iomux_v3_cfg_t *pad_list, unsigned count)
+int mxc_iomux_v3_setup_multiple_pads(const iomux_v3_cfg_t *pad_list, unsigned count)
 {
-	iomux_v3_cfg_t *p = pad_list;
+	const iomux_v3_cfg_t *p = pad_list;
 	int i;
 	int ret;
 
@@ -116,7 +117,8 @@ static int imx_iomux_v3_set_state(struct pinctrl_device *pdev, struct device_nod
 
 
 	if (!size || size % FSL_PIN_SIZE) {
-		dev_err(iomux->pinctrl.dev, "Invalid fsl,pins property\n");
+		dev_err(iomux->pinctrl.dev, "Invalid fsl,pins property in %s\n",
+				np->full_name);
 		return -EINVAL;
 	}
 
@@ -194,6 +196,8 @@ static __maybe_unused struct of_device_id imx_iomux_v3_dt_ids[] = {
 		.compatible = "fsl,imx53-iomuxc",
 	}, {
 		.compatible = "fsl,imx6q-iomuxc",
+	},  {
+		.compatible = "fsl,imx6dl-iomuxc",
 	}, {
 		/* sentinel */
 	}

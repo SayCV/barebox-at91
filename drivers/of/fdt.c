@@ -54,20 +54,20 @@ static inline char *dt_string(struct fdt_header *f, char *strstart, uint32_t ofs
  * Parse a flat device tree binary blob and return a pointer to the
  * unflattened tree.
  */
-struct device_node *of_unflatten_dtb(struct device_node *root, void *infdt)
+struct device_node *of_unflatten_dtb(void *infdt)
 {
 	const void *nodep;	/* property node pointer */
 	uint32_t tag;		/* tag */
 	int  len;		/* length of the property */
 	const struct fdt_property *fdt_prop;
 	const char *pathp, *name;
-	struct device_node *node = NULL, *n;
+	struct device_node *root, *node = NULL;
 	struct property *p;
 	uint32_t dt_struct;
 	struct fdt_node_header *fnh;
 	void *dt_strings;
 	struct fdt_header f;
-	int ret, merge = 0;
+	int ret;
 	unsigned int maxlen;
 	struct fdt_header *fdt = infdt;
 
@@ -100,14 +100,9 @@ struct device_node *of_unflatten_dtb(struct device_node *root, void *infdt)
 	dt_struct = f.off_dt_struct;
 	dt_strings = (void *)fdt + f.off_dt_strings;
 
-	if (root) {
-		pr_debug("unflatten: merging into existing tree\n");
-		merge = 1;
-	} else {
-		root = of_new_node(NULL, NULL);
-		if (!root)
-			return ERR_PTR(-ENOMEM);
-	}
+	root = of_new_node(NULL, NULL);
+	if (!root)
+		return ERR_PTR(-ENOMEM);
 
 	while (1) {
 		tag = be32_to_cpu(*(uint32_t *)(infdt + dt_struct));
@@ -132,14 +127,10 @@ struct device_node *of_unflatten_dtb(struct device_node *root, void *infdt)
 				goto err;
 			}
 
-			if (!node) {
+			if (!node)
 				node = root;
-			} else {
-				if (merge && (n = of_find_child_by_name(node, pathp)))
-					node = n;
-				else
-					node = of_new_node(node, pathp);
-			}
+			else
+				node = of_new_node(node, pathp);
 
 			break;
 
@@ -178,13 +169,9 @@ struct device_node *of_unflatten_dtb(struct device_node *root, void *infdt)
 				goto err;
 			}
 
-			if (merge && (p = of_find_property(node, name))) {
-				free(p->value);
-				p->value = xzalloc(len);
-				memcpy(p->value, nodep, len);
-			} else {
-				of_new_property(node, name, nodep, len);
-			}
+			p = of_new_property(node, name, nodep, len);
+			if (!strcmp(name, "phandle") && len == 4)
+				node->phandle = be32_to_cpup(p->value);
 
 			break;
 
@@ -207,7 +194,7 @@ struct device_node *of_unflatten_dtb(struct device_node *root, void *infdt)
 		}
 	}
 err:
-	of_free(root);
+	of_delete_node(root);
 
 	return ERR_PTR(ret);
 }
@@ -401,12 +388,11 @@ void *of_flatten_dtb(struct device_node *node)
 	nh->tag = cpu_to_fdt32(FDT_END);
 	fdt.dt_nextofs = dt_next_ofs(fdt.dt_nextofs, sizeof(struct fdt_node_header));
 
-	header.size_dt_strings = cpu_to_fdt32(fdt.str_nextofs);
-	header.size_dt_struct = cpu_to_fdt32(fdt.dt_nextofs);
-
 	header.off_dt_struct = cpu_to_fdt32(ofs);
+	header.size_dt_struct = cpu_to_fdt32(fdt.dt_nextofs - ofs);
 
 	header.off_dt_strings = cpu_to_fdt32(fdt.dt_nextofs);
+	header.size_dt_strings = cpu_to_fdt32(fdt.str_nextofs);
 
 	if (fdt.dt_size - fdt.dt_nextofs < fdt.str_nextofs) {
 		fdt.dt = memalign_realloc(fdt.dt, fdt.dt_size,

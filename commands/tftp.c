@@ -24,6 +24,7 @@
 #include <fs.h>
 #include <net.h>
 #include <libbb.h>
+#include <libfile.h>
 
 #define TFTP_MOUNT_PATH	"/.tftp_tmp_path"
 
@@ -72,7 +73,7 @@ static int do_tftpb(int argc, char *argv[])
 		goto err_free;
 
 	ip = net_get_serverip();
-	ret = mount(ip_to_string(ip), "tftp", TFTP_MOUNT_PATH);
+	ret = mount(ip_to_string(ip), "tftp", TFTP_MOUNT_PATH, NULL);
 	if (ret)
 		goto err_rmdir;
 
@@ -92,12 +93,17 @@ err_free:
 }
 
 BAREBOX_CMD_HELP_START(tftp)
-BAREBOX_CMD_HELP_USAGE("tftp [-p] <source> [dest]\n")
-BAREBOX_CMD_HELP_SHORT("Load a file from or upload to TFTP server.\n")
+BAREBOX_CMD_HELP_TEXT("Load (or save) a file via TFTP. SOURCE is a path on server,")
+BAREBOX_CMD_HELP_TEXT("server address is taken from the environment (ethX.serverip).")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT ("-p", "push to TFTP server")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(tftp)
 	.cmd		= do_tftpb,
-	.usage		= "(up-)Load file using tftp protocol",
+	BAREBOX_CMD_DESC("load (or save) a file using TFTP")
+	BAREBOX_CMD_OPTS("[-p] SOURCE [DEST]")
+	BAREBOX_CMD_GROUP(CMD_GRP_NET)
 	BAREBOX_CMD_HELP(cmd_tftp_help)
 BAREBOX_CMD_END

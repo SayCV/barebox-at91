@@ -5,33 +5,7 @@
 
 #ifndef __ASSEMBLY__
 
-static inline void arm_cpu_lowlevel_init(void)
-{
-	uint32_t r;
-
-	/* set the cpu to SVC32 mode */
-	__asm__ __volatile__("mrs %0, cpsr":"=r"(r));
-	r &= ~0x1f;
-	r |= 0xd3;
-	__asm__ __volatile__("msr cpsr, %0" : : "r"(r));
-
-	/* disable MMU stuff and caches */
-	r = get_cr();
-	r &= ~(CR_M | CR_C | CR_B | CR_S | CR_R | CR_V);
-	r |= CR_I;
-
-#if __LINUX_ARM_ARCH__ >= 6
-	r |= CR_U;
-	r &= ~CR_A;
-#else
-	r |= CR_A;
-#endif
-
-#ifdef __ARMEB__
-	r |= CR_B;
-#endif
-	set_cr(r);
-}
+void arm_cpu_lowlevel_init(void);
 
 /*
  * 32 bytes at this offset is reserved in the barebox head for board/SoC
@@ -43,7 +17,7 @@ static inline void arm_cpu_lowlevel_init(void)
 #ifdef CONFIG_HAVE_MACH_ARM_HEAD
 #include <mach/barebox-arm-head.h>
 #else
-static inline void barebox_arm_head(void)
+static inline void __barebox_arm_head(void)
 {
 	__asm__ __volatile__ (
 #ifdef CONFIG_THUMB2_BAREBOX
@@ -52,12 +26,12 @@ static inline void barebox_arm_head(void)
 		"bx r9\n"
 		".thumb\n"
 		"1:\n"
-		"bl barebox_arm_reset_vector\n"
+		"bl 2f\n"
 		".rept 10\n"
 		"1: b 1b\n"
 		".endr\n"
 #else
-		"b barebox_arm_reset_vector\n"
+		"b 2f\n"
 		"1: b 1b\n"
 		"1: b 1b\n"
 		"1: b 1b\n"
@@ -74,45 +48,17 @@ static inline void barebox_arm_head(void)
 		".rept 8\n"
 		".word 0x55555555\n"
 		".endr\n"
+		"2:\n"
+	);
+}
+static inline void barebox_arm_head(void)
+{
+	__barebox_arm_head();
+	__asm__ __volatile__ (
+		"b barebox_arm_reset_vector\n"
 	);
 }
 #endif
-
-#else
-
-.macro  arm_cpu_lowlevel_init, scratch
-
-	/* set the cpu to SVC32 mode */
-	mrs	\scratch, cpsr
-	bic	\scratch, \scratch, #0x1f
-	orr	\scratch, \scratch, #0xd3
-	msr	cpsr, \scratch
-
-#if __LINUX_ARM_ARCH__ >= 7
-	isb
-#elif __LINUX_ARM_ARCH__ == 6
-	mcr	p15, 0, \scratch, c7, c5, 4
-#endif
-
-	/* disable MMU stuff and caches */
-	mrc p15, 0, \scratch, c1, c0, 0
-	bic	\scratch, \scratch , #(CR_M | CR_C | CR_B)
-	bic	\scratch, \scratch,	#(CR_S | CR_R | CR_V)
-	orr	\scratch, \scratch, #CR_I
-
-#if __LINUX_ARM_ARCH__ >= 6
-	orr	\scratch, \scratch, #CR_U
-	bic	\scratch, \scratch, #CR_A
-#else
-	orr	\scratch, \scratch, #CR_A
-#endif
-
-#ifdef __ARMEB__
-	orr	\scratch, \scratch, #CR_B
-#endif
-
-	mcr	p15, 0, \scratch, c1, c0, 0
-.endm
 
 #endif /* __ASSEMBLY__ */
 

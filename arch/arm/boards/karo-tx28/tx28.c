@@ -21,6 +21,8 @@
 #include <io.h>
 #include <generated/mach-types.h>
 #include <mach/imx-regs.h>
+#include <mach/devices.h>
+#include <mach/iomux.h>
 #include <asm/mmu.h>
 
 /* setup the CPU card internal signals */
@@ -87,67 +89,13 @@ static int tx28_devices_init(void)
 	for (i = 0; i < ARRAY_SIZE(tx28_pad_setup); i++)
 		imx_gpio_mode(tx28_pad_setup[i]);
 
-	armlinux_set_bootparams((void *)IMX_MEMORY_BASE + 0x100);
 	armlinux_set_architecture(MACH_TYPE_TX28);
 
 	base_board_init();
 
-	add_generic_device("mxs_nand", 0, NULL, MXS_GPMI_BASE, 0x2000,
-			   IORESOURCE_MEM, NULL);
+	imx28_add_nand();
 
 	return 0;
 }
 
 device_initcall(tx28_devices_init);
-
-/**
-@page tx28 KARO's TX28 CPU module
-
-@section tx28_cpu_card The CPU module
-
-http://www.karo-electronics.de/
-
-This CPU card is based on a Freescale i.MX28 CPU. The card is shipped with:
-
-- 128 MiB synchronous dynamic RAM (DDR2 type), 200 MHz support
-- 128 MiB NAND K9F1G08U0A (3.3V type)
-- PCA9554 GPIO expander
-- DS1339 RTC
-- LAN8710 Phy
-
-@section tx28_basboards Supported baseboards
-
-Supported baseboards are:
-- KARO's Starterkit 5
-
-@section tx28_stk5_howto How to get barebox for 'KARO's Starterkit 5'
-
-Using the default configuration:
-
-@verbatim
-make ARCH=arm tx28stk5_defconfig
-@endverbatim
-
-Build the binary image:
-
-@verbatim
-make ARCH=arm CROSS_COMPILE=armv5compiler
-@endverbatim
-
-@note replace the armv5compiler with your ARM v5 cross compiler.
-
-@note To use the result, you also need the following resources from Freescale:
-- the 'bootlets' archive
-- the 'elftosb2' encryption tool
-- in the case you want to start @b barebox from an attached SD card the
-  'sdimage' tool from Freescale's 'uuc' archive.
-
-@section tx28_mlayout Memory layout when barebox is running:
-
-- 0x40000000 start of SDRAM
-- 0x40000100 start of kernel's boot parameters
-  - below malloc area: stack area
-  - below barebox: malloc area
-- 0x47000000 start of @b barebox
-
-*/

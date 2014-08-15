@@ -29,7 +29,11 @@
 #include <mach/iomux-imx28.h>
 #include <mach/mci.h>
 #include <mach/fb.h>
+#include <mach/iomux.h>
 #include <mach/ocotp.h>
+#include <mach/devices.h>
+#include <mach/usb.h>
+#include <usb/fsl_usb2.h>
 #include <spi/spi.h>
 
 #include <asm/armlinux.h>
@@ -133,10 +137,15 @@ static const uint32_t mx28evk_pads[] = {
 	SSP2_D3 | VE_3_3V | PULLUP(1) | STRENGTH(S8MA), /* SS0 !CS */
 	SSP2_CMD | VE_3_3V | PULLUP(1) | STRENGTH(S8MA), /* MOSI DIO */
 	SSP2_SCK | VE_3_3V | PULLUP(1) | STRENGTH(S8MA), /* CLK */
+
+	/* USB VBUS1 ENABLE - default to ON */
+	AUART2_RX_GPIO | VE_3_3V | PULLUP(0) | GPIO_OUT | GPIO_VALUE(1),
+	/* USB VBUS0 ENABLE - default to OFF */
+	AUART2_TX_GPIO | VE_3_3V | PULLUP(0) | GPIO_OUT | GPIO_VALUE(0),
 };
 
 static struct mxs_mci_platform_data mci_pdata = {
-	.caps = MMC_MODE_8BIT,
+	.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
 	.voltages = MMC_VDD_32_33 | MMC_VDD_33_34,	/* fixed to 3.3 V */
 	.f_min = 400 * 1000,
 	.f_max = 25000000,
@@ -192,7 +201,6 @@ static struct fb_videomode mx28_evk_vmodes[] = {
 		.lower_margin = 10,
 		.sync = FB_SYNC_DE_HIGH_ACT | FB_SYNC_CLK_INVERT,
 		.vmode = FB_VMODE_NONINTERLACED,
-		.flag = 0,
 	}
 };
 
@@ -245,6 +253,12 @@ static const struct spi_board_info mx28evk_spi_board_info[] = {
 	}
 };
 
+#ifdef CONFIG_USB_GADGET_DRIVER_ARC
+static struct fsl_usb2_platform_data usb_pdata = {
+	.operating_mode	= FSL_USB2_DR_DEVICE,
+	.phy_mode	= FSL_USB2_PHY_UTMI,
+};
+#endif
 static int mx28_evk_devices_init(void)
 {
 	int i;
@@ -253,15 +267,6 @@ static int mx28_evk_devices_init(void)
 	for (i = 0; i < ARRAY_SIZE(mx28evk_pads); i++)
 		imx_gpio_mode(mx28evk_pads[i]);
 
-	/* enable IOCLK0 to run at the PLL frequency */
-	imx_set_ioclk(0, 480000000);
-	imx_set_ioclk(1, 320000000);
-	/* run the SSP unit clock at 100 MHz */
-	imx_set_sspclk(0, 100000000, 1);
-	/* run the SSP unit 2 clock at 160Mhz */
-	imx_set_sspclk(2, 160000000, 1);
-
-	armlinux_set_bootparams((void *)IMX_MEMORY_BASE + 0x100);
 	armlinux_set_architecture(MACH_TYPE_MX28EVK);
 
 	add_generic_device("mxs_mci", 0, NULL, IMX_SSP0_BASE, 0x2000,
@@ -274,13 +279,11 @@ static int mx28_evk_devices_init(void)
 			IORESOURCE_MEM, NULL);
 	mx28_evk_get_ethaddr(); /* must be after registering ocotp */
 
-	imx_enable_enetclk();
 	mx28_evk_fec_reset();
 	add_generic_device("imx28-fec", 0, NULL, IMX_FEC0_BASE, 0x4000,
 			   IORESOURCE_MEM, &fec_info);
 
-	add_generic_device("mxs_nand", 0, NULL, MXS_GPMI_BASE, 0x2000,
-			   IORESOURCE_MEM, NULL);
+	imx28_add_nand();
 
 	spi_register_board_info(mx28evk_spi_board_info,
 			ARRAY_SIZE(mx28evk_spi_board_info));
@@ -288,12 +291,23 @@ static int mx28_evk_devices_init(void)
 	add_generic_device("mxs_spi", 2, NULL, IMX_SSP2_BASE, 0x2000,
 			   IORESOURCE_MEM, NULL);
 
+#ifdef CONFIG_USB_GADGET_DRIVER_ARC
+	imx28_usb_phy0_enable();
+	imx28_usb_phy1_enable();
+	add_generic_usb_ehci_device(DEVICE_ID_DYNAMIC, IMX_USB1_BASE, NULL);
+	add_generic_device("fsl-udc", DEVICE_ID_DYNAMIC, NULL, IMX_USB0_BASE,
+			   0x200, IORESOURCE_MEM, &usb_pdata);
+#endif
+
 	return 0;
 }
 device_initcall(mx28_evk_devices_init);
 
 static int mx28_evk_console_init(void)
 {
+	barebox_set_model("Freescale i.MX28 EVK");
+	barebox_set_hostname("mx28evk");
+
 	add_generic_device("stm_serial", 0, NULL, IMX_DBGUART_BASE, 0x2000,
 			   IORESOURCE_MEM, NULL);
 

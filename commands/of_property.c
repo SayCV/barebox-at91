@@ -24,6 +24,7 @@
 #include <command.h>
 #include <fs.h>
 #include <malloc.h>
+#include <complete.h>
 #include <linux/ctype.h>
 #include <asm/byteorder.h>
 #include <errno.h>
@@ -55,7 +56,36 @@ static int of_parse_prop_cells(char * const *newval, int count, char *data, int 
 		}
 
 		cp = newp;
-		tmp = simple_strtoul(cp, &newp, 0);
+
+		if (isdigit(*cp)) {
+			tmp = simple_strtoul(cp, &newp, 0);
+		} else {
+			struct device_node *n;
+			char *str;
+			int len = 0;
+
+			str = cp;
+			while (*str && *str != '>' && *str != ' ') {
+				str++;
+				len++;
+			}
+
+			str = xzalloc(len + 1);
+			strncpy(str, cp, len);
+
+			n = of_find_node_by_path_or_alias(NULL, str);
+			if (!n)
+				printf("Cannot find node '%s'\n", str);
+
+			free(str);
+
+			if (!n)
+				return -EINVAL;
+
+			tmp = of_node_create_phandle(n);
+			newp += len;
+		}
+
 		*(__be32 *)data = __cpu_to_be32(tmp);
 		data  += 4;
 		*len += 4;
@@ -175,7 +205,7 @@ static int do_of_property(int argc, char *argv[])
 	int set = 0;
 	int ret;
 	char *path = NULL, *propname = NULL;
-	struct device_node *root, *node = NULL;
+	struct device_node *node = NULL;
 	struct property *pp = NULL;
 
 	while ((opt = getopt(argc, argv, "ds")) > 0) {
@@ -194,15 +224,9 @@ static int do_of_property(int argc, char *argv[])
 	if (optind == argc)
 		return COMMAND_ERROR_USAGE;
 
-	root = of_get_root_node();
-	if (!root) {
-		printf("root node not set\n");
-		return -ENOENT;
-	}
-
 	if (optind < argc) {
 		path = argv[optind];
-		node = of_find_node_by_path(root, path);
+		node = of_find_node_by_path_or_alias(NULL, path);
 		if (!node) {
 			printf("Cannot find nodepath %s\n", path);
 			return -ENOENT;
@@ -212,7 +236,7 @@ static int do_of_property(int argc, char *argv[])
 	if (optind + 1 < argc) {
 		propname = argv[optind + 1];
 
-		pp = of_find_property(node, propname);
+		pp = of_find_property(node, propname, NULL);
 		if (!set && !pp) {
 			printf("Cannot find property %s\n", propname);
 			return -ENOENT;
@@ -278,17 +302,22 @@ static int do_of_property(int argc, char *argv[])
 }
 
 BAREBOX_CMD_HELP_START(of_property)
-BAREBOX_CMD_HELP_USAGE("of_property [OPTIONS] [NODE] [PROPERTY] [VALUES]\n")
-BAREBOX_CMD_HELP_OPT  ("-s",  "set property to value\n")
-BAREBOX_CMD_HELP_OPT  ("-d",  "delete property\n")
-BAREBOX_CMD_HELP_TEXT ("\nvalid formats for values:\n")
-BAREBOX_CMD_HELP_TEXT ("<0x00112233 4 05> - an array of cells\n")
-BAREBOX_CMD_HELP_TEXT ("[00 11 22 .. nn]  - byte stream\n")
-BAREBOX_CMD_HELP_TEXT ("If the value does not start with '<' or '[' it is interpreted as strings\n")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT ("-s",  "set property to value")
+BAREBOX_CMD_HELP_OPT ("-d",  "delete property")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Valid formats for values:")
+BAREBOX_CMD_HELP_TEXT("<0x00112233 4 05> - an array of cells. cells not beginning with a digit are")
+BAREBOX_CMD_HELP_TEXT("                    interpreted as node pathes and converted to phandles")
+BAREBOX_CMD_HELP_TEXT("[00 11 22 .. nn]  - byte stream")
+BAREBOX_CMD_HELP_TEXT("If the value does not start with '<' or '[' it is interpreted as string")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(of_property)
 	.cmd		= do_of_property,
-	.usage		= "handle of properties",
+	BAREBOX_CMD_DESC("handle device tree properties")
+	BAREBOX_CMD_OPTS("[-sd] NODE [PROPERTY] [VALUES]")
+	BAREBOX_CMD_GROUP(CMD_GRP_MISC)
+	BAREBOX_CMD_COMPLETE(devicetree_complete)
 	BAREBOX_CMD_HELP(cmd_of_property_help)
 BAREBOX_CMD_END

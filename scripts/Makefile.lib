@@ -14,6 +14,13 @@ obj-m := $(filter-out $(obj-y),$(obj-m))
 lib-y := $(filter-out $(obj-y), $(sort $(lib-y) $(lib-m)))
 
 
+pbl-y		+= $(pbl-dtb-y)
+obj-y		+= $(obj-dtb-y)
+extra-y		+= $(patsubst %.dtb.o,%.dtb.S,$(obj-dtb-y))
+extra-y		+= $(patsubst %.dtb.o,%.dtb,$(obj-dtb-y))
+extra-y		+= $(patsubst %.dtb.o,%.dtb.S,$(pbl-dtb-y))
+extra-y		+= $(patsubst %.dtb.o,%.dtb,$(pbl-dtb-y))
+
 # Handle objects in subdirs
 # ---------------------------------------------------------------------------
 # o if we encounter foo/ in $(obj-y), replace it by foo/built-in.o
@@ -28,6 +35,9 @@ pbl-y		+= $(lwl-y)
 else
 obj-y		+= $(lwl-y)
 endif
+
+obj-y		+= $(obj-pbl-y)
+pbl-y		+= $(obj-pbl-y)
 
 # for non dirs add pbl- prefix to the target
 # so we recompile the source with custom flags and custom quiet
@@ -70,7 +80,7 @@ subdir-obj-y := $(filter %/built-in.o, $(obj-y))
 subdir-obj-y += $(__subdir-obj-y)
 
 # $(obj-dirs) is a list of directories that contain object files
-obj-dirs := $(dir $(multi-objs) $(subdir-obj-y))
+obj-dirs := $(dir $(multi-objs) $(obj-y) $(pbl-y))
 
 # Replace multi-part objects by their individual parts, look at local dir only
 real-objs-y := $(foreach m, $(filter-out $(subdir-obj-y), $(obj-y)), $(if $(strip $($(m:.o=-objs)) $($(m:.o=-y))),$($(m:.o=-objs)) $($(m:.o=-y)),$(m))) $(extra-y)
@@ -95,6 +105,7 @@ multi-objs-y	:= $(addprefix $(obj)/,$(multi-objs-y))
 multi-objs-m	:= $(addprefix $(obj)/,$(multi-objs-m))
 subdir-ym	:= $(addprefix $(obj)/,$(subdir-ym))
 obj-dirs	:= $(addprefix $(obj)/,$(obj-dirs))
+bbenv-y		:= $(addprefix $(obj)/,$(bbenv-y))
 
 # These flags are needed for modversions and compiling, so we define them here
 # already
@@ -142,8 +153,9 @@ cpp_flags      = -Wp,-MD,$(depfile) $(NOSTDINC_FLAGS) $(__cpp_flags)
 ld_flags       = $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 dtc_cpp_flags  = -Wp,-MD,$(depfile).pre -nostdinc                        \
-		 -I$(srctree)/arch/$(SRCARCH)/dts                        \
-		 -I$(srctree)/arch/$(SRCARCH)/dts/include                \
+		 -I$(srctree)/arch/$(SRCARCH)/dts/include		 \
+		 -I$(srctree)/dts/include                                \
+		 -I$(srctree)/dts/src/                                   \
 		 -undef -D__DTS__
 
 # Finds the multi-part object the current object will be linked into
@@ -190,31 +202,23 @@ quiet_cmd_gzip = GZIP    $@
 cmd_gzip = (cat $(filter-out FORCE,$^) | gzip -n -f -9 > $@) || \
 	(rm -f $@ ; false)
 
+%.gz: %
+	$(call if_changed,gzip)
+
 # DTC
 # ---------------------------------------------------------------------------
 
 # Generate an assembly file to wrap the output of the device tree compiler
-quiet_cmd_dt_S_dtb= DTB    $@
-cmd_dt_S_dtb=							\
-(								\
-	echo '\#include <asm-generic/barebox.lds.h>';		\
-	echo '.section .dtb.rodata.$(subst -,_,$(*F)),"a"';	\
-	echo '.balign STRUCT_ALIGNMENT';			\
-	echo '.global __dtb_$(subst -,_,$(*F))_start';		\
-	echo '__dtb_$(subst -,_,$(*F))_start:';			\
-	echo '.incbin "$<" ';					\
-	echo '__dtb_$(subst -,_,$(*F))_end:';			\
-	echo '.global __dtb_$(subst -,_,$(*F))_end';		\
-	echo '.balign STRUCT_ALIGNMENT';			\
-) > $@
-
-$(obj)/%.dtb.S: $(obj)/%.dtb
-	$(call cmd,dt_S_dtb)
+quiet_cmd_dt_S_dtb = DTB     $@
+cmd_dt_S_dtb = $(srctree)/scripts/gen-dtb-s $(subst -,_,$(*F)) $< $(CONFIG_IMD) > $@
+$(obj)/%.dtb.S: $(obj)/%.dtb $(srctree)/scripts/gen-dtb-s FORCE
+	$(call if_changed,dt_S_dtb)
 
 quiet_cmd_dtc = DTC     $@
 cmd_dtc = $(CPP) $(dtc_cpp_flags) -x assembler-with-cpp -o $(dtc-tmp) $< ; \
 	$(objtree)/scripts/dtc/dtc -O dtb -o $@ -b 0 \
 		-i $(srctree)/arch/$(SRCARCH)/dts $(DTC_FLAGS) \
+		-i $(srctree)/dts/src/$(SRCARCH) \
 		-d $(depfile).dtc $(dtc-tmp) ; \
 	cat $(depfile).pre $(depfile).dtc > $(depfile)
 
@@ -222,6 +226,34 @@ $(obj)/%.dtb: $(src)/%.dts FORCE
 	$(call if_changed_dep,dtc)
 
 dtc-tmp = $(subst $(comma),_,$(dot-target).dts)
+
+obj-y += $(patsubst %,%.bbenv$(DEFAULT_COMPRESSION_SUFFIX).o,$(bbenv-y))
+extra-y += $(patsubst %,%.bbenv$(DEFAULT_COMPRESSION_SUFFIX),$(bbenv-y))
+extra-y += $(patsubst %,%.bbenv$(DEFAULT_COMPRESSION_SUFFIX).S,$(bbenv-y))
+extra-y += $(patsubst %,%.bbenv$(DEFAULT_COMPRESSION_SUFFIX).o,$(bbenv-y))
+
+quiet_cmd_env_S = ENV.S   $@
+cmd_env_S =							\
+(								\
+	echo '\#include <asm-generic/barebox.lds.h>';		\
+	echo '.section .bbenv.rodata.$(subst -,_,$(*F)),"a"';	\
+	echo '.balign STRUCT_ALIGNMENT';			\
+	echo '.global __bbenv_$(subst -,_,$(*F))_start';	\
+	echo '__bbenv_$(subst -,_,$(*F))_start:';		\
+	echo '.incbin "$<" ';					\
+	echo '__bbenv_$(subst -,_,$(*F))_end:';			\
+	echo '.global __bbenv_$(subst -,_,$(*F))_end';		\
+	echo '.balign STRUCT_ALIGNMENT';			\
+) > $@
+
+$(obj)/%.bbenv$(DEFAULT_COMPRESSION_SUFFIX).S: $(src)/%.bbenv$(DEFAULT_COMPRESSION_SUFFIX) FORCE
+	$(call if_changed,env_S)
+
+quiet_cmd_env = ENV     $@
+cmd_env=$(srctree)/scripts/genenv $(srctree) $(objtree) $@ $<
+
+%.bbenv$(DEFAULT_COMPRESSION_SUFFIX): % FORCE
+	$(call cmd,env)
 
 # Bzip2
 # ---------------------------------------------------------------------------
@@ -248,6 +280,9 @@ cmd_bzip2 = (cat $(filter-out FORCE,$^) | \
 	bzip2 -9 && $(call size_append, $(filter-out FORCE,$^))) > $@ || \
 	(rm -f $@ ; false)
 
+%.bz2: %
+	$(call if_changed,bzip2)
+
 # Lzma
 # ---------------------------------------------------------------------------
 
@@ -256,10 +291,16 @@ cmd_lzma = (cat $(filter-out FORCE,$^) | \
 	lzma -9 && $(call size_append, $(filter-out FORCE,$^))) > $@ || \
 	(rm -f $@ ; false)
 
+%.lzma: %
+	$(call if_changed,lzma)
+
 quiet_cmd_lzo = LZO     $@
 cmd_lzo = (cat $(filter-out FORCE,$^) | \
 	lzop -9 && $(call size_append, $(filter-out FORCE,$^))) > $@ || \
 	(rm -f $@ ; false)
+
+%.lzo: %
+	$(call if_changed,lzo)
 
 # XZ
 # ---------------------------------------------------------------------------
@@ -288,6 +329,17 @@ quiet_cmd_xzmisc = XZMISC  $@
 cmd_xzmisc = (cat $(filter-out FORCE,$^) | \
 	xz --check=crc32 --lzma2=dict=1MiB) > $@ || \
 	(rm -f $@ ; false)
+
+# lz4
+# ---------------------------------------------------------------------------
+
+quiet_cmd_lz4 = LZ4     $@
+cmd_lz4 = (cat $(filter-out FORCE,$^) | \
+	lz4c -l -c1 stdin stdout && $(call size_append, $(filter-out FORCE,$^))) > $@ || \
+	(rm -f $@ ; false)
+
+%.lz4: %
+	$(call if_changed,lz4)
 
 quiet_cmd_disasm = DISASM  $@
 cmd_disasm = $(OBJDUMP) -d $< > $@
@@ -319,14 +371,33 @@ cmd_imximage_S_dcd=						\
 	echo '.balign STRUCT_ALIGNMENT';			\
 ) > $@
 
+imxcfg_cpp_flags  = -Wp,-MD,$(depfile) -nostdinc -x assembler-with-cpp \
+      -I $(srctree)/include -I $(MACH)/include \
+      -include include/generated/autoconf.h
+
+dcd-tmp = $(subst $(comma),_,$(dot-target).dcd.tmp)
+
 quiet_cmd_dcd = DCD     $@
-      cmd_dcd = $(objtree)/scripts/imx/imx-image -d -o $@ -c $<
+      cmd_dcd = $(CPP) $(imxcfg_cpp_flags) -o $(dcd-tmp) $< ; \
+		$(objtree)/scripts/imx/imx-image -d -o $@ -c $(dcd-tmp)
 
 $(obj)/%.dcd: $(obj)/%.imxcfg FORCE
 	$(call if_changed,dcd)
 
-$(obj)/%.S: $(obj)/%.dcd
+$(obj)/%.dcd.S: $(obj)/%.dcd
 	$(call cmd,imximage_S_dcd)
 
+imximg-tmp = $(subst $(comma),_,$(dot-target).imxcfg.tmp)
+
 quiet_cmd_imx_image = IMX-IMG $@
-      cmd_imx_image = $(obj)/scripts/imx/imx-image -b -c $(CFG_$(@F)) -f $< -o $@
+      cmd_imx_image = $(CPP) $(imxcfg_cpp_flags) -o $(imximg-tmp) $(CFG_$(@F)) ; \
+		      $(objtree)/scripts/imx/imx-image -o $@ -b -c $(imximg-tmp) -f $<
+
+quiet_cmd_kwb_image = KWB     $@
+      cmd_kwb_image = scripts/kwbimage -p $< $(OPTS_$(@F)) -o $@
+
+quiet_cmd_cboot_bct = BCT     $@
+      cmd_cboot_bct = $(objtree)/scripts/tegra/cbootimage -gbct -s $(soc) $< $@
+
+$(obj)/%.bct: $(obj)/%.bct.cfg
+	$(call cmd,cboot_bct)

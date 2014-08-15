@@ -504,7 +504,7 @@ static int mxcmci_probe(struct device_d *dev)
 	host->mci.send_cmd = mxcmci_request;
 	host->mci.set_ios = mxcmci_set_ios;
 	host->mci.init = mxcmci_init;
-	host->mci.host_caps = MMC_MODE_4BIT;
+	host->mci.host_caps = MMC_CAP_4_BIT_DATA;
 	host->mci.hw_dev = dev;
 
 	host->base = dev_request_mem_region(dev, 0);
@@ -520,8 +520,17 @@ static int mxcmci_probe(struct device_d *dev)
 	return 0;
 }
 
+static __maybe_unused struct of_device_id mxcmci_compatible[] = {
+	{
+		.compatible = "fsl,imx27-mmc",
+	}, {
+		/* sentinel */
+	}
+};
+
 static struct driver_d mxcmci_driver = {
         .name  = DRIVER_NAME,
         .probe = mxcmci_probe,
+	.of_compatible = DRV_OF_COMPAT(mxcmci_compatible),
 };
 device_platform_driver(mxcmci_driver);

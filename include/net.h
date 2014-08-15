@@ -52,6 +52,7 @@ struct eth_device {
 
 	struct device_d dev;
 	struct device_d *parent;
+	char *nodepath;
 
 	struct list_head list;
 
@@ -67,7 +68,7 @@ struct eth_device {
 int eth_register(struct eth_device* dev);    /* Register network device		*/
 void eth_unregister(struct eth_device* dev); /* Unregister network device	*/
 
-int eth_send(void *packet, int length);	   /* Send a packet		*/
+int eth_send(struct eth_device *edev, void *packet, int length);	   /* Send a packet		*/
 int eth_rx(void);			/* Check for received packets	*/
 
 /* associate a MAC address to a ethernet device. Should be called by
@@ -268,11 +269,18 @@ static inline IPaddr_t net_read_ip(void *from)
 }
 
 /* return uint32 *in network byteorder* */
-static inline uint32_t net_read_uint32(uint32_t *from)
+static inline uint32_t net_read_uint32(void *from)
 {
-	ulong l;
-	memcpy((void*)&l, (void*)from, sizeof(l));
-	return l;
+	uint32_t tmp;
+	memcpy(&tmp, from, sizeof(tmp));
+	return tmp;
+}
+
+static inline uint64_t net_read_uint64(void *from)
+{
+	uint64_t tmp;
+	memcpy(&tmp, from, sizeof(tmp));
+	return tmp;
 }
 
 /* write IP *in network byteorder* */
@@ -361,6 +369,8 @@ static inline int is_broadcast_ether_addr(const u8 *addr)
 	return (addr[0] & addr[1] & addr[2] & addr[3] & addr[4] & addr[5]) == 0xff;
 }
 
+#define ETH_ALEN 6
+
 /**
  * random_ether_addr - Generate software assigned random Ethernet address
  * @addr: Pointer to a six-byte array containing the Ethernet address
@@ -371,9 +381,9 @@ static inline int is_broadcast_ether_addr(const u8 *addr)
 static inline void random_ether_addr(u8 *addr)
 {
 	srand(get_time_ns());
-	get_random_bytes(addr, 6);
-	addr [0] &= 0xfe;	/* clear multicast bit */
-	addr [0] |= 0x02;	/* set local assignment bit (IEEE802) */
+	get_random_bytes(addr, ETH_ALEN);
+	addr[0] &= 0xfe;	/* clear multicast bit */
+	addr[0] |= 0x02;	/* set local assignment bit (IEEE802) */
 }
 
 /**
@@ -396,7 +406,7 @@ typedef void rx_handler_f(void *ctx, char *packet, unsigned int len);
 
 void eth_set_current(struct eth_device *eth);
 struct eth_device *eth_get_current(void);
-struct eth_device *eth_get_byname(char *name);
+struct eth_device *eth_get_byname(const char *name);
 
 /**
  * net_receive - Pass a received packet from an ethernet driver to the protocol stack
@@ -405,12 +415,13 @@ struct eth_device *eth_get_byname(char *name);
  *
  * Return 0 if the packet is successfully handled. Can be ignored
  */
-int net_receive(unsigned char *pkt, int len);
+int net_receive(struct eth_device *edev, unsigned char *pkt, int len);
 
 struct net_connection {
 	struct ethernet *et;
 	struct iphdr *ip;
 	struct udphdr *udp;
+	struct eth_device *edev;
 	struct icmphdr *icmp;
 	unsigned char *packet;
 	struct list_head list;
@@ -448,5 +459,10 @@ int net_udp_send(struct net_connection *con, int len);
 int net_icmp_send(struct net_connection *con, int len);
 
 void led_trigger_network(enum led_trigger trigger);
+
+#define IFUP_FLAG_FORCE		(1 << 0)
+
+int ifup(const char *name, unsigned flags);
+int ifup_all(unsigned flags);
 
 #endif /* __NET_H__ */

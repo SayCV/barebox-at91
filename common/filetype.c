@@ -23,6 +23,7 @@
 #include <fs.h>
 #include <malloc.h>
 #include <errno.h>
+#include <envfs.h>
 
 struct filetype_str {
 	const char *name;	/* human readable filetype */
@@ -31,24 +32,32 @@ struct filetype_str {
 
 static const struct filetype_str filetype_str[] = {
 	[filetype_unknown] = { "unknown", "unkown" },
-	[filetype_arm_zimage] = { "arm Linux zImage", "arm-zimage" },
-	[filetype_lzo_compressed] = { "lzo compressed", "lzo" },
-	[filetype_arm_barebox] = { "arm barebox image", "arm-barebox" },
+	[filetype_arm_zimage] = { "ARM Linux zImage", "arm-zimage" },
+	[filetype_lzo_compressed] = { "LZO compressed", "lzo" },
+	[filetype_lz4_compressed] = { "LZ4 compressed", "lz4" },
+	[filetype_arm_barebox] = { "ARM barebox image", "arm-barebox" },
 	[filetype_uimage] = { "U-Boot uImage", "u-boot" },
 	[filetype_ubi] = { "UBI image", "ubi" },
 	[filetype_jffs2] = { "JFFS2 image", "jffs2" },
-	[filetype_gzip] = { "gzip compressed", "gzip" },
-	[filetype_bzip2] = { "bzip2 compressed", "bzip2" },
-	[filetype_oftree] = { "open firmware flat device tree", "dtb" },
-	[filetype_aimage] = { "Android boot image", "android" },
-	[filetype_sh] = { "Bourne Shell", "sh" },
+	[filetype_gzip] = { "GZIP compressed", "gzip" },
+	[filetype_bzip2] = { "BZIP2 compressed", "bzip2" },
+	[filetype_oftree] = { "open firmware Device Tree flattened Binary", "dtb" },
+	[filetype_aimage] = { "android boot image", "android" },
+	[filetype_sh] = { "bourne SHell", "sh" },
 	[filetype_mips_barebox] = { "MIPS barebox image", "mips-barebox" },
 	[filetype_fat] = { "FAT filesytem", "fat" },
 	[filetype_mbr] = { "MBR sector", "mbr" },
 	[filetype_bmp] = { "BMP image", "bmp" },
 	[filetype_png] = { "PNG image", "png" },
-	[filetype_ext] = { "ext filesystem", "ext" },
+	[filetype_ext] = { "EXT filesystem", "ext" },
 	[filetype_gpt] = { "GUID Partition Table", "gpt" },
+	[filetype_ubifs] = { "UBIFS image", "ubifs" },
+	[filetype_bpk] = { "Binary PacKage", "bpk" },
+	[filetype_barebox_env] = { "barebox environment file", "bbenv" },
+	[filetype_ch_image] = { "TI OMAP CH boot image", "ch-image" },
+	[filetype_ch_image_be] = {
+			"TI OMAP CH boot image (big endian)", "ch-image-be" },
+	[filetype_exe] = { "MS-DOS executable", "exe" },
 };
 
 const char *file_type_to_string(enum filetype f)
@@ -173,6 +182,8 @@ enum filetype file_detect_partition_table(const void *_buf, size_t bufsize)
 	return filetype_unknown;
 }
 
+#define CH_TOC_section_name     0x14
+
 enum filetype file_detect_type(const void *_buf, size_t bufsize)
 {
 	const u32 *buf = _buf;
@@ -186,6 +197,8 @@ enum filetype file_detect_type(const void *_buf, size_t bufsize)
 
 	if (strncmp(buf8, "#!/bin/sh", 9) == 0)
 		return filetype_sh;
+	if (buf[0] == ENVFS_32(ENVFS_MAGIC))
+		return filetype_barebox_env;
 
 	if (bufsize < 32)
 		return filetype_unknown;
@@ -195,10 +208,15 @@ enum filetype file_detect_type(const void *_buf, size_t bufsize)
 	if (buf8[0] == 0x89 && buf8[1] == 0x4c && buf8[2] == 0x5a &&
 			buf8[3] == 0x4f)
 		return filetype_lzo_compressed;
+	if (buf8[0] == 0x02 && buf8[1] == 0x21 && buf8[2] == 0x4c &&
+			buf8[3] == 0x18)
+		return filetype_lz4_compressed;
 	if (buf[0] == be32_to_cpu(0x27051956))
 		return filetype_uimage;
 	if (buf[0] == 0x23494255)
 		return filetype_ubi;
+	if (buf[0] == le32_to_cpu(0x06101831))
+		return filetype_ubifs;
 	if (buf[0] == 0x20031985)
 		return filetype_jffs2;
 	if (buf8[0] == 0x1f && buf8[1] == 0x8b && buf8[2] == 0x08)
@@ -214,9 +232,14 @@ enum filetype file_detect_type(const void *_buf, size_t bufsize)
 		return filetype_png;
 	if (is_barebox_mips_head(_buf))
 		return filetype_mips_barebox;
+	if (buf[0] == be32_to_cpu(0x534F4659))
+		return filetype_bpk;
 
 	if (bufsize < 64)
 		return filetype_unknown;
+
+	if (buf8[0] == 'M' && buf8[1] == 'Z')
+		return filetype_exe;
 
 	if (is_barebox_arm_head(_buf))
 		return filetype_arm_barebox;
@@ -232,6 +255,13 @@ enum filetype file_detect_type(const void *_buf, size_t bufsize)
 
 	if (bufsize >= 1536 && buf16[512 + 28] == le16_to_cpu(0xef53))
 		return filetype_ext;
+
+	if (strncmp(buf8 + CH_TOC_section_name, "CHSETTINGS", 10) == 0)
+		return filetype_ch_image;
+
+	if (buf[5] == 0x43485345 && buf[6] == 0x5454494E &&
+		buf[7] == 0x47530000)
+		return filetype_ch_image_be;
 
 	return filetype_unknown;
 }

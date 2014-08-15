@@ -19,6 +19,7 @@
 #include <complete.h>
 #include <init.h>
 #include <io.h>
+#include <stmp-device.h>
 
 #include <mach/generic.h>
 #include <mach/imx-regs.h>
@@ -39,27 +40,11 @@ static int imx_reset_usb_bootstrap(void)
 	 * To prevent this (and boot from the configured bootsource instead)
 	 * clear this bit here.
 	 */
-	writel(0x2, IMX_WDT_BASE + HW_RTC_PERSISTENT1 + BIT_CLR);
+	writel(0x2, IMX_WDT_BASE + HW_RTC_PERSISTENT1 + STMP_OFFSET_REG_CLR);
 
 	return 0;
 }
 device_initcall(imx_reset_usb_bootstrap);
-
-extern void imx_dump_clocks(void);
-
-static int do_clocks(int argc, char *argv[])
-{
-	imx_dump_clocks();
-
-	return 0;
-}
-
-BAREBOX_CMD_START(dump_clocks)
-	.cmd		= do_clocks,
-	.usage		= "show clock frequencies",
-	BAREBOX_CMD_COMPLETE(empty_complete)
-BAREBOX_CMD_END
-
 
 static int __silicon_revision = SILICON_REVISION_UNKNOWN;
 

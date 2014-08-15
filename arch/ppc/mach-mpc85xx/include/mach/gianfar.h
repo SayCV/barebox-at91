@@ -14,18 +14,17 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
- *
  * Platform data for the Motorola Triple Speed Ethernet Controller
  */
+
+#define GFAR_TBIPA_OFFSET       0x030   /* TBI PHY address */
+#define GFAR_TBIPA_END		0x1f    /* Last valid PHY address */
 
 struct gfar_info_struct {
 	unsigned int phyaddr;
 	unsigned int tbiana;
 	unsigned int tbicr;
+	unsigned int mdiobus_tbi;
 };
 
 int fsl_eth_init(int num, struct gfar_info_struct *gf);

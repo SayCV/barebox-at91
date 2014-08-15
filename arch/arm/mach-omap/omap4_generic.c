@@ -6,8 +6,8 @@
 #include <mach/omap4-silicon.h>
 #include <mach/omap4-mux.h>
 #include <mach/syslib.h>
+#include <mach/generic.h>
 #include <mach/gpmc.h>
-#include <mach/gpio.h>
 #include <mach/omap4_rom_usb.h>
 
 /*
@@ -34,7 +34,7 @@
 #define EMIF_L3_CONFIG_VAL_SYS_10_LL_0		0x0A0000FF
 #define EMIF_L3_CONFIG_VAL_SYS_10_MPU_3_LL_0	0x0A300000
 
-void __noreturn reset_cpu(unsigned long addr)
+void __noreturn omap4_reset_cpu(unsigned long addr)
 {
 	writel(OMAP44XX_PRM_RSTCTRL_RESET, OMAP44XX_PRM_RSTCTRL);
 
@@ -470,6 +470,9 @@ static int watchdog_init(void)
 {
 	void __iomem *wd2_base = (void *)OMAP44XX_WDT2_BASE;
 
+	if (!cpu_is_omap4())
+		return 0;
+
 	writel(WD_UNLOCK1, wd2_base + WATCHDOG_WSPR);
 	wait_for_command_complete();
 	writel(WD_UNLOCK2, wd2_base + WATCHDOG_WSPR);
@@ -499,19 +502,25 @@ static int omap_vector_init(void)
 	return 0;
 }
 
-#define OMAP4_TRACING_VECTOR3 0x4030d048
-
 static int omap4_bootsource(void)
 {
-	enum bootsource src = BOOTSOURCE_UNKNOWN;
-	u32 bootsrc = readl(OMAP4_TRACING_VECTOR3);
+	enum bootsource src;
+	uint32_t *omap4_bootinfo = (void *)OMAP44XX_SRAM_SCRATCH_SPACE;
 
-	if (bootsrc & (1 << 5))
-		src = BOOTSOURCE_MMC;
-	else if (bootsrc & (1 << 3))
+	switch (omap4_bootinfo[2] & 0xFF) {
+	case OMAP44XX_SAR_BOOT_NAND:
 		src = BOOTSOURCE_NAND;
-	else if (bootsrc & (1<<20))
+		break;
+	case OMAP44XX_SAR_BOOT_MMC1:
+		src = BOOTSOURCE_MMC;
+		break;
+	case OMAP44XX_SAR_BOOT_USB_1:
 		src = BOOTSOURCE_USB;
+		break;
+	default:
+		src = BOOTSOURCE_UNKNOWN;
+	}
+
 	bootsource_set(src);
 	bootsource_set_instance(0);
 
@@ -519,7 +528,13 @@ static int omap4_bootsource(void)
 
 	return 0;
 }
-core_initcall(omap4_bootsource);
+
+int omap4_init(void)
+{
+	omap_gpmc_base = (void *)OMAP44XX_GPMC_BASE;
+
+	return omap4_bootsource();
+}
 
 #define GPIO_MASK 0x1f
 
@@ -537,11 +552,9 @@ static void __iomem *omap4_get_gpio_base(unsigned gpio)
 
 #define I2C_SLAVE 0x12
 
-noinline int omap4_scale_vcores(unsigned vsel0_pin)
+noinline int omap4430_scale_vcores(void)
 {
-	void __iomem *base;
 	unsigned int rev = omap4_revision();
-	u32 val = 0;
 
 	/* For VC bypass only VCOREx_CGF_FORCE  is necessary and
 	 * VCOREx_CFG_VOLTAGE  changes can be discarded
@@ -549,50 +562,16 @@ noinline int omap4_scale_vcores(unsigned vsel0_pin)
 	writel(0, OMAP44XX_PRM_VC_CFG_I2C_MODE);
 	writel(0x6026, OMAP44XX_PRM_VC_CFG_I2C_CLK);
 
-	/* TPS - supplies vdd_mpu on 4460 */
-	if (rev >= OMAP4460_ES1_0) {
-		/*
-		 * Setup SET1 and SET0 with right values so that kernel
-		 * can use either of them based on its needs.
-		 */
-		omap4_do_scale_tps62361(TPS62361_REG_ADDR_SET0, 1430);
-		omap4_do_scale_tps62361(TPS62361_REG_ADDR_SET1, 1430);
-
-		/*
-		 * Select SET1 in TPS62361:
-		 * VSEL1 is grounded on board. So the following selects
-		 * VSEL1 = 0 and VSEL0 = 1
-		 */
-		base = omap4_get_gpio_base(vsel0_pin);
-
-		val = 1 << (vsel0_pin & GPIO_MASK);
-		writel(val, base + 0x190);
-
-		val =  readl(base + 0x134);
-		val &= ~(1 << (vsel0_pin & GPIO_MASK));
-		writel(val, base + 0x134);
-
-		val = 1 << (vsel0_pin & GPIO_MASK);
-		writel(val, base + 0x194);
-	}
-
-	/* set VCORE1 force VSEL */
-	/*
+	/* set VCORE1 force VSEL
 	 * 4430 : supplies vdd_mpu
 	 * Setting a high voltage for Nitro mode as smart reflex is not enabled.
 	 * We use the maximum possible value in the AVS range because the next
 	 * higher voltage in the discrete range (code >= 0b111010) is way too
 	 * high
-	 *
-	 * 4460 : supplies vdd_core
-	 *
 	 */
-	if (rev < OMAP4460_ES1_0)
-		/* 0x55: i2c addr, 3A: ~ 1430 mvolts*/
-		omap4_power_i2c_send((0x3A55 << 8) | I2C_SLAVE);
-	else
-		/* 0x55: i2c addr, 28: ~ 1200 mvolts*/
-		omap4_power_i2c_send((0x2855 << 8) | I2C_SLAVE);
+
+	/* 0x55: i2c addr, 3A: ~ 1430 mvolts*/
+	omap4_power_i2c_send((0x3A55 << 8) | I2C_SLAVE);
 
 	/* FIXME: set VCORE2 force VSEL, Check the reset value */
 	omap4_power_i2c_send((0x295B << 8) | I2C_SLAVE);
@@ -605,8 +584,55 @@ noinline int omap4_scale_vcores(unsigned vsel0_pin)
 	case OMAP4430_ES2_1:
 		omap4_power_i2c_send((0x2A61 << 8) | I2C_SLAVE);
 		break;
-	/* > OMAP4460_ES1_0 : VCORE3 not connected */
 	}
+
+	return 0;
+}
+
+noinline int omap4460_scale_vcores(unsigned vsel0_pin, unsigned volt_mv)
+{
+	void __iomem *base;
+	u32 val = 0;
+
+	/* For VC bypass only VCOREx_CGF_FORCE  is necessary and
+	 * VCOREx_CFG_VOLTAGE  changes can be discarded
+	 */
+	writel(0, OMAP44XX_PRM_VC_CFG_I2C_MODE);
+	writel(0x6026, OMAP44XX_PRM_VC_CFG_I2C_CLK);
+
+	/* TPS - supplies vdd_mpu on 4460
+	 * Setup SET1 and don't touch SET0 it acts as boot voltage
+	 * source after reset.
+	 */
+
+	omap4_do_scale_tps62361(TPS62361_REG_ADDR_SET1, volt_mv);
+
+	/*
+	 * Select SET1 in TPS62361:
+	 * VSEL1 is grounded on board. So the following selects
+	 * VSEL1 = 0 and VSEL0 = 1
+	 */
+	base = omap4_get_gpio_base(vsel0_pin);
+
+	val = 1 << (vsel0_pin & GPIO_MASK);
+	writel(val, base + 0x190);
+
+	val =  readl(base + 0x134);
+	val &= ~(1 << (vsel0_pin & GPIO_MASK));
+	writel(val, base + 0x134);
+
+	val = 1 << (vsel0_pin & GPIO_MASK);
+	writel(val, base + 0x194);
+
+	/* set VCORE1 force VSEL
+	 * 4460 : supplies vdd_core
+	 */
+
+	/* 0x55: i2c addr, 28: ~ 1200 mvolts*/
+	omap4_power_i2c_send((0x2855 << 8) | I2C_SLAVE);
+
+	/* FIXME: set VCORE2 force VSEL, Check the reset value */
+	omap4_power_i2c_send((0x295B << 8) | I2C_SLAVE);
 
 	return 0;
 }
@@ -652,4 +678,8 @@ static int omap4_gpio_init(void)
 
 	return 0;
 }
-coredevice_initcall(omap4_gpio_init);
+
+int omap4_devices_init(void)
+{
+	return omap4_gpio_init();
+}

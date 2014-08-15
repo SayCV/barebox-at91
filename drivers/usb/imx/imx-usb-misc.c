@@ -16,6 +16,8 @@
 #include <common.h>
 #include <init.h>
 #include <io.h>
+#include <of.h>
+#include <errno.h>
 #include <usb/chipidea-imx.h>
 #include <mach/imx6-regs.h>
 #include <mach/iomux-mx6.h>
@@ -279,9 +281,6 @@ static __maybe_unused int mx5_initialize_usb_hw(void __iomem *base, int port,
 
 	switch (port) {
 	case 0:	/* OTG port */
-		if (!(flags & MXC_EHCI_INTERNAL_PHY))
-			return 0;
-
 		/* Adjust UTMI PHY frequency to 24MHz */
 		v = readl(base + MX5_UTMI_PHY_CTRL_1);
 		v = (v & ~0x3) | 0x01;

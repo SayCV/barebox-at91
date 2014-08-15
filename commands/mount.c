@@ -17,41 +17,79 @@
  *
  */
 
-/**
- * @file
- * @brief Filesystem mounting support
- */
-
 #include <common.h>
 #include <command.h>
 #include <fs.h>
 #include <errno.h>
 #include <getopt.h>
+#include <linux/err.h>
 
 static int do_mount(int argc, char *argv[])
 {
-	int opt;
-	int ret = 0;
-	struct fs_device_d *fsdev;
+	int opt, verbose = 0;
+	struct driver_d *drv;
 	const char *type = NULL;
 	const char *mountpoint, *dev;
+	const char *fsoptions = NULL;
 
-	if (argc == 1) {
-		for_each_fs_device(fsdev) {
-			printf("%s on %s type %s\n",
-				fsdev->parent_device ? dev_name(fsdev->parent_device) : "none",
-				fsdev->path,
-				fsdev->dev.name);
-		}
-		return 0;
-	}
-
-	while ((opt = getopt(argc, argv, "t:")) > 0) {
+	while ((opt = getopt(argc, argv, "ao:t:v")) > 0) {
 		switch (opt) {
+		case 'a':
+			mount_all();
+			break;
 		case 't':
 			type = optarg;
 			break;
+		case 'o':
+			fsoptions = optarg;
+			break;
+		case 'v':
+			verbose++;
+			break;
 		}
+	}
+
+	if (argc == optind) {
+		struct fs_device_d *fsdev;
+
+		for_each_fs_device(fsdev) {
+			printf("%s on %s type %s\n",
+				fsdev->backingstore ? fsdev->backingstore : "none",
+				fsdev->path,
+				fsdev->dev.name);
+		}
+
+		if (verbose) {
+			printf("\nSupported filesystems:\n\n");
+			bus_for_each_driver(&fs_bus, drv) {
+				struct fs_driver_d * fsdrv = drv_to_fs_driver(drv);
+				printf("%s\n", fsdrv->drv.name);
+			}
+		}
+
+		return 0;
+	}
+
+	if (argc == optind + 1) {
+		struct cdev *cdev;
+		const char *path, *devstr;
+
+		devstr = argv[optind];
+
+		if (!strncmp(devstr, "/dev/", 5))
+			devstr += 5;
+
+		cdev = cdev_by_name(devstr);
+		if (!cdev)
+			return -ENOENT;
+
+		path = cdev_mount_default(cdev, fsoptions);
+		if (IS_ERR(path))
+			return PTR_ERR(path);
+
+		printf("mounted /dev/%s on %s\n", devstr, path);
+
+		return 0;
 	}
 
 	if (argc < optind + 2)
@@ -69,53 +107,28 @@ static int do_mount(int argc, char *argv[])
 		mountpoint = argv[optind + 1];
 	}
 
-	if ((ret = mount(dev, type, mountpoint))) {
-		perror("mount");
-		return 1;
-	}
-	return 0;
+	return mount(dev, type, mountpoint, fsoptions);
 }
 
 BAREBOX_CMD_HELP_START(mount)
-BAREBOX_CMD_HELP_USAGE("mount [[-t <fstype] <device> <mountpoint>]\n")
-BAREBOX_CMD_HELP_SHORT("Mount a filesystem of a given type to a mountpoint.\n")
-BAREBOX_CMD_HELP_SHORT("If no fstype is specified, try to detect it automatically.\n")
-BAREBOX_CMD_HELP_SHORT("If no argument is given, list mounted filesystems.\n")
+BAREBOX_CMD_HELP_TEXT("If no argument is given, list mounted filesystems.")
+BAREBOX_CMD_HELP_TEXT("If no FSTYPE is specified, try to detect it automatically.")
+BAREBOX_CMD_HELP_TEXT("With -a the mount command mounts all block devices whose filesystem")
+BAREBOX_CMD_HELP_TEXT("can be detected automatically to /mnt/PARTNAME")
+BAREBOX_CMD_HELP_TEXT("If mountpoint is not given, a standard mountpoint of /mnt/DEVICE")
+BAREBOX_CMD_HELP_TEXT("is used. This directoy is created automatically if necessary.")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT("-a\t", "mount all blockdevices")
+BAREBOX_CMD_HELP_OPT("-t FSTYPE", "specify filesystem type")
+BAREBOX_CMD_HELP_OPT("-o OPTIONS", "set file system OPTIONS")
+BAREBOX_CMD_HELP_OPT("-v\t", "verbose")
 BAREBOX_CMD_HELP_END
-
-/**
- * @page mount_command
-
-<ul>
-<li>\<device> can be a device in /dev or some arbitrary string if no
-    device is needed for this driver, i.e. on ramfs. </li>
-<li>\<fstype> is the filesystem driver. A list of available drivers can
-    be shown with the \ref devinfo_command command.</li>
-<li>\<mountpoint> must be an empty directory, one level below the /
-    directory.</li>
-</ul>
-
- */
-
-/**
- * @page how_mount_works How mount works in barebox
-
-Mounting a filesystem ontop of a device is working like devices and
-drivers are finding together.
-
-The mount command creates a new device with the filesystem name as the
-driver for this "device". So the framework is able to merge both parts
-together.
-
-By the way: With this feature its impossible to accidentely remove
-partitions in use. A partition is internally also a device. If its
-mounted it will be marked as busy, so an delpart command fails, until
-the filesystem has been unmounted.
-
- */
 
 BAREBOX_CMD_START(mount)
 	.cmd		= do_mount,
-	.usage		= "Mount a filesystem of a given type to a mountpoint or list mounted filesystems.",
+	BAREBOX_CMD_DESC("mount a filesystem or list mounted filesystems")
+	BAREBOX_CMD_OPTS("[[-atov] [DEVICE] [MOUNTPOINT]]")
+	BAREBOX_CMD_GROUP(CMD_GRP_PART)
 	BAREBOX_CMD_HELP(cmd_mount_help)
 BAREBOX_CMD_END

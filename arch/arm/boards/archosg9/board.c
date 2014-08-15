@@ -26,7 +26,11 @@
 #include <readkey.h>
 #include "archos_features.h"
 
-static int archosg9_console_init(void){
+static int archosg9_console_init(void)
+{
+	barebox_set_model("Archos G9");
+	barebox_set_hostname("g9");
+
 	if (IS_ENABLED(CONFIG_DRIVER_SERIAL_OMAP4_USBBOOT) &&
 			omap4_usbboot_ready()) {
 		add_generic_device("serial_omap4_usbboot", DEVICE_ID_DYNAMIC
@@ -52,11 +56,11 @@ static struct i2c_board_info i2c_devices[] = {
 };
 #if defined(CONFIG_KEYBOARD_TWL6030) && defined(CONFIG_KEYBOARD_GPIO)
 static struct twl6030_pwrbtn_platform_data pwrbtn_data = {
-	.code = KEY_ENTER
+	.code = BB_KEY_ENTER
 };
 static struct gpio_keys_button keys[] = {
-	{ .code = KEY_UP  , .gpio = 43, .active_low = 1 },
-	{ .code = KEY_DOWN, .gpio = 44, .active_low = 1 },
+	{ .code = BB_KEY_UP  , .gpio = 43, .active_low = 1 },
+	{ .code = BB_KEY_DOWN, .gpio = 44, .active_low = 1 },
 };
 static struct gpio_keys_platform_data gk_data = {
 	.buttons = keys,
@@ -74,8 +78,6 @@ static int archosg9_devices_init(void){
 		&pwrbtn_data);
 	add_gpio_keys_device(DEVICE_ID_DYNAMIC, &gk_data);
 #endif
-
-	armlinux_set_bootparams((void *)0x80000100);
 	/*
 	 * This should be:
 	 * armlinux_set_architecture(MACH_TYPE_OMAP4_ARCHOSG9);

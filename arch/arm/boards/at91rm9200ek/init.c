@@ -22,13 +22,14 @@
 #include <generated/mach-types.h>
 #include <partition.h>
 #include <fs.h>
+#include <gpio.h>
 #include <fcntl.h>
 #include <io.h>
 #include <sizes.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <mach/at91_pmc.h>
 #include <mach/board.h>
-#include <mach/gpio.h>
+#include <mach/iomux.h>
 #include <mach/io.h>
 #include <spi/spi.h>
 
@@ -174,7 +175,6 @@ static int at91rm9200ek_devices_init(void)
 	devfs_add_partition("nor0", 0x40000, 0x20000, DEVFS_PARTITION_FIXED, "env0");
 #endif
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(MACH_TYPE_AT91RM9200EK);
 
 	return 0;
@@ -183,7 +183,17 @@ device_initcall(at91rm9200ek_devices_init);
 
 static int at91rm9200ek_console_init(void)
 {
+	barebox_set_model("Atmel at91rm9200-ek");
+	barebox_set_hostname("at91rm9200-ek");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 console_initcall(at91rm9200ek_console_init);
+
+static int at91rm9200ek_main_clock(void)
+{
+	at91_set_main_clock(18432000);
+	return 0;
+}
+pure_initcall(at91rm9200ek_main_clock);

@@ -187,7 +187,7 @@ static int gem_recv(struct eth_device *edev)
 		status = macb->rx_ring[macb->rx_tail].ctrl;
 		length = MACB_BFEXT(RX_FRMLEN, status);
 		buffer = macb->rx_buffer + macb->rx_buffer_size * macb->rx_tail;
-		net_receive(buffer, length);
+		net_receive(edev, buffer, length);
 		macb->rx_ring[macb->rx_tail].addr &= ~MACB_BIT(RX_USED);
 		barrier();
 
@@ -237,7 +237,7 @@ static int macb_recv(struct eth_device *edev)
 				buffer = (void *)NetRxPackets[0];
 			}
 
-			net_receive(buffer, length);
+			net_receive(edev, buffer, length);
 			if (++rx_tail >= macb->rx_ring_size)
 				rx_tail = 0;
 			reclaim_rx_buffers(macb, rx_tail);
@@ -458,8 +458,30 @@ static int macb_phy_write(struct mii_bus *bus, int addr, int reg, u16 value)
 static int macb_get_ethaddr(struct eth_device *edev, unsigned char *adr)
 {
 	struct macb_device *macb = edev->priv;
+	u32 bottom;
+	u16 top;
+	u8 addr[6];
+	int i;
 
 	dev_dbg(macb->dev, "%s\n", __func__);
+
+	/* Check all 4 address register for vaild address */
+	for (i = 0; i < 4; i++) {
+		bottom = macb_or_gem_readl(macb, SA1B + i * 8);
+		top = macb_or_gem_readl(macb, SA1T + i * 8);
+
+		addr[0] = bottom & 0xff;
+		addr[1] = (bottom >> 8) & 0xff;
+		addr[2] = (bottom >> 16) & 0xff;
+		addr[3] = (bottom >> 24) & 0xff;
+		addr[4] = top & 0xff;
+		addr[5] = (top >> 8) & 0xff;
+
+		if (is_valid_ether_addr(addr)) {
+			memcpy(adr, addr, sizeof(addr));
+			return 0;
+		}
+	}
 
 	return -1;
 }

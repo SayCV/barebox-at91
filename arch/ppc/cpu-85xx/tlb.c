@@ -24,7 +24,7 @@
 #include <common.h>
 #include <asm/processor.h>
 #include <asm/config.h>
-#include <asm/bitops.h>
+#include <linux/log2.h>
 #include <mach/mmu.h>
 
 void e500_invalidate_tlb(u8 tlb)
@@ -50,7 +50,22 @@ void e500_init_tlbs(void)
 	return ;
 }
 
-static int e500_find_free_tlbcam(void)
+void e500_read_tlbcam_entry(int idx, u32 *valid, u32 *tsize,
+		unsigned long *epn, phys_addr_t *rpn)
+{
+	u32 _mas1;
+
+	mtspr(MAS0, FSL_BOOKE_MAS0(1, idx, 0));
+	asm volatile("tlbre;isync");
+	_mas1 = mfspr(MAS1);
+
+	*valid = (_mas1 & MAS1_VALID);
+	*tsize = (_mas1 >> 7) & 0x1f;
+	*epn = mfspr(MAS2) & MAS2_EPN;
+	*rpn = mfspr(MAS3) & MAS3_RPN;
+}
+
+int e500_find_free_tlbcam(void)
 {
 	int ix;
 	u32 _mas1;
@@ -123,21 +138,29 @@ static unsigned int e500_setup_ddr_tlbs_phys(phys_addr_t p_addr,
 					unsigned int memsize_in_meg)
 {
 	int i;
-	unsigned int tlb_size;
-	unsigned int wimge = 0;
+	unsigned int tlb_size, max_cam, tsize_mask;
+	unsigned int wimge = MAS2_M;
 	unsigned int ram_tlb_address = (unsigned int)CFG_SDRAM_BASE;
-	unsigned int max_cam = (mfspr(SPRN_TLB1CFG) >> 16) & 0xf;
 	u64 size, memsize = (u64)memsize_in_meg << 20;
 
-	size = min((u64)memsize, (u64)MAX_MEM_MAPPED);
+	size = min(memsize, MAX_MEM_MAPPED);
+	if ((mfspr(SPRN_MMUCFG) & MMUCFG_MAVN) == MMUCFG_MAVN_V1) {
+		/* Convert (4^max) kB to (2^max) bytes */
+		max_cam = ((mfspr(SPRN_TLB1CFG) >> 16) & 0xf) * 2 + 10;
+		tsize_mask = ~1U;
+	} else {
+		/* Convert (2^max) kB to (2^max) bytes */
+		max_cam = __ilog2(mfspr(SPRN_TLB1PS)) + 10;
+		tsize_mask = ~0U;
+	}
 
-	/* Convert (4^max) kB to (2^max) bytes */
-	max_cam = (max_cam * 2) + 10;
-
-	for (i = 0; size && (i < 8); i++) {
+	for (i = 0; size && i < 8; i++) {
 		int ram_tlb_index = e500_find_free_tlbcam();
-		u32 camsize = __ilog2_u64(size) & ~1U;
-		u32 align = __ilog2(ram_tlb_address) & ~1U;
+		u32 camsize = __ilog2_u64(size) & tsize_mask;
+		u32 align = __ilog2(ram_tlb_address) & tsize_mask;
+
+		if (ram_tlb_index == -1)
+			break;
 
 		if (align == -2)
 			align = max_cam;
@@ -147,7 +170,7 @@ static unsigned int e500_setup_ddr_tlbs_phys(phys_addr_t p_addr,
 		if (camsize > max_cam)
 			camsize = max_cam;
 
-		tlb_size = (camsize - 10) / 2;
+		tlb_size = camsize - 10;
 
 		e500_set_tlb(1, ram_tlb_address, p_addr,
 			MAS3_SX|MAS3_SW|MAS3_SR, wimge,

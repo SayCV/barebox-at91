@@ -35,6 +35,7 @@
 #include <io.h>
 #include <nand.h>
 #include <asm/armlinux.h>
+#include <mach/iomux.h>
 #include <mach/s3c-iomap.h>
 #include <mach/s3c-clocks.h>
 #include <mach/s3c-generic.h>
@@ -86,6 +87,9 @@ static int tiny210_console_init(void)
 	s3c_gpio_mode(GPA02_NCTS0 | ENABLE_PU);
 	s3c_gpio_mode(GPA03_NRTS0);
 
+	barebox_set_model("Friendlyarm tiny210");
+	barebox_set_hostname("tiny210");
+
 	add_generic_device("s3c_serial", DEVICE_ID_DYNAMIC, NULL,
 			   S3C_UART1_BASE, S3C_UART1_SIZE,
 			   IORESOURCE_MEM, NULL);
@@ -105,7 +109,8 @@ static int tiny210_devices_init(void)
 		led_gpio_register(&leds[i]);
 	}
 
-	armlinux_set_bootparams((void*)S3C_SDRAM_BASE + 0x100);
+	led_set_trigger(LED_TRIGGER_HEARTBEAT, &leds[0].led);
+
 	armlinux_set_architecture(MACH_TYPE_MINI210);
 
 	return 0;

@@ -25,13 +25,14 @@
 #include <partition.h>
 #include <fs.h>
 #include <fcntl.h>
+#include <gpio.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <linux/mtd/nand.h>
 #include <mach/at91_pmc.h>
 #include <mach/board.h>
-#include <mach/gpio.h>
+#include <mach/iomux.h>
 #include <mach/io.h>
 #include <mach/at91sam9_smc.h>
 #include <linux/w1-gpio.h>
@@ -160,7 +161,6 @@ static int pm9g45_devices_init(void)
 	devfs_add_partition("nand0", SZ_256K + SZ_128K, SZ_128K, DEVFS_PARTITION_FIXED, "env_raw");
 	dev_add_bb_dev("env_raw", "env0");
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_6 + 0x100));
 	armlinux_set_architecture(MACH_TYPE_PM9G45);
 
 	return 0;
@@ -169,7 +169,17 @@ device_initcall(pm9g45_devices_init);
 
 static int pm9g45_console_init(void)
 {
+	barebox_set_model("Ronetix PM9G45");
+	barebox_set_hostname("pm9g45");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 console_initcall(pm9g45_console_init);
+
+static int pm9g45_main_clock(void)
+{
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(pm9g45_main_clock);

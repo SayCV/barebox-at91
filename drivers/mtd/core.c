@@ -25,6 +25,7 @@
 #include <ioctl.h>
 #include <nand.h>
 #include <errno.h>
+#include <of.h>
 
 #include "mtd.h"
 
@@ -70,16 +71,15 @@ static ssize_t mtd_op_read(struct cdev *cdev, void* buf, size_t count,
 	int ret;
 	unsigned long offset = _offset;
 
-	dev_dbg(cdev->dev, "read ofs: 0x%08lx count: 0x%08x\n",
+	dev_dbg(cdev->dev, "read ofs: 0x%08lx count: 0x%08zx\n",
 			offset, count);
 
 	ret = mtd_read(mtd, offset, count, &retlen, buf);
-
-	if(ret) {
-		printf("err %d\n", ret);
+	if (ret < 0)
 		return ret;
-	}
-	return retlen;
+	if (mtd->ecc_strength == 0)
+		return retlen;	/* device lacks ecc */
+	return ret >= mtd->bitflip_threshold ? -EUCLEAN : retlen;
 }
 
 #define NOTALIGNED(x) (x & (mtd->writesize - 1)) != 0
@@ -98,17 +98,67 @@ static ssize_t mtd_op_write(struct cdev* cdev, const void *buf, size_t _count,
 	return ret ? ret : _count;
 }
 
+static struct mtd_erase_region_info *mtd_find_erase_region(struct mtd_info *mtd, loff_t offset)
+{
+	int i;
+
+	for (i = 0; i < mtd->numeraseregions; i++) {
+		struct mtd_erase_region_info *e = &mtd->eraseregions[i];
+		if (offset > e->offset + e->erasesize * e->numblocks)
+			continue;
+		return e;
+	}
+
+	return NULL;
+}
+
+static int mtd_erase_align(struct mtd_info *mtd, size_t *count, loff_t *offset)
+{
+	struct mtd_erase_region_info *e;
+	loff_t ofs;
+
+	if (mtd->numeraseregions == 0) {
+		ofs = *offset & ~(mtd->erasesize - 1);
+		*count += (*offset - ofs);
+		*count = ALIGN(*count, mtd->erasesize);
+		*offset = ofs;
+		return 0;
+	}
+
+	e = mtd_find_erase_region(mtd, *offset);
+	if (!e)
+		return -EINVAL;
+
+	ofs = *offset & ~(e->erasesize - 1);
+	*count += (*offset - ofs);
+
+	e = mtd_find_erase_region(mtd, *offset + *count);
+	if (!e)
+		return -EINVAL;
+
+	*count = ALIGN(*count, e->erasesize);
+	*offset = ofs;
+
+	return 0;
+}
+
 static int mtd_op_erase(struct cdev *cdev, size_t count, loff_t offset)
 {
 	struct mtd_info *mtd = cdev->priv;
 	struct erase_info erase;
+	uint32_t addr;
 	int ret;
+
+	ret = mtd_erase_align(mtd, &count, &offset);
+	if (ret)
+		return ret;
 
 	memset(&erase, 0, sizeof(erase));
 	erase.mtd = mtd;
-	erase.addr = offset;
+	addr = offset;
 
 	if (!mtd->block_isbad) {
+		erase.addr = addr;
 		erase.len = count;
 		return mtd_erase(mtd, &erase);
 	}
@@ -116,22 +166,24 @@ static int mtd_op_erase(struct cdev *cdev, size_t count, loff_t offset)
 	erase.len = mtd->erasesize;
 
 	while (count > 0) {
-		dev_dbg(cdev->dev, "erase %d %d\n", erase.addr, erase.len);
+		dev_dbg(cdev->dev, "erase %d %d\n", addr, erase.len);
 
 		if (!mtd->allow_erasebad)
-			ret = mtd_block_isbad(mtd, erase.addr);
+			ret = mtd_block_isbad(mtd, addr);
 		else
 			ret = 0;
 
+		erase.addr = addr;
+
 		if (ret > 0) {
-			printf("Skipping bad block at 0x%08x\n", erase.addr);
+			printf("Skipping bad block at 0x%08x\n", addr);
 		} else {
 			ret = mtd_erase(mtd, &erase);
 			if (ret)
 				return ret;
 		}
 
-		erase.addr += mtd->erasesize;
+		addr += mtd->erasesize;
 		count -= count > mtd->erasesize ? mtd->erasesize : count;
 	}
 
@@ -188,6 +240,7 @@ int mtd_ioctl(struct cdev *cdev, int request, void *buf)
 		user->erasesize	= mtd->erasesize;
 		user->writesize	= mtd->writesize;
 		user->oobsize	= mtd->oobsize;
+		user->subpagesize = mtd->writesize >> mtd->subpage_sft;
 		user->mtd	= mtd;
 		/* The below fields are obsolete */
 		user->ecctype	= -1;
@@ -265,7 +318,20 @@ int mtd_block_markbad(struct mtd_info *mtd, loff_t ofs)
 int mtd_read(struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen,
 		u_char *buf)
 {
-	return mtd->read(mtd, from, len, retlen, buf);
+	int ret_code;
+	*retlen = 0;
+
+	/*
+	 * In the absence of an error, drivers return a non-negative integer
+	 * representing the maximum number of bitflips that were corrected on
+	 * any one ecc region (if applicable; zero otherwise).
+	 */
+	ret_code = mtd->read(mtd, from, len, retlen, buf);
+	if (unlikely(ret_code < 0))
+		return ret_code;
+	if (mtd->ecc_strength == 0)
+		return 0;	/* device lacks ecc */
+	return ret_code >= mtd->bitflip_threshold ? -EUCLEAN : 0;
 }
 
 int mtd_write(struct mtd_info *mtd, loff_t to, size_t len, size_t *retlen,
@@ -279,6 +345,27 @@ int mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 	return mtd->erase(mtd, instr);
 }
 
+int mtd_read_oob(struct mtd_info *mtd, loff_t from, struct mtd_oob_ops *ops)
+{
+	int ret_code;
+
+	ops->retlen = ops->oobretlen = 0;
+	if (!mtd->read_oob)
+		return -EOPNOTSUPP;
+	/*
+	 * In cases where ops->datbuf != NULL, mtd->_read_oob() has semantics
+	 * similar to mtd->_read(), returning a non-negative integer
+	 * representing max bitflips. In other cases, mtd->_read_oob() may
+	 * return -EUCLEAN. In all cases, perform similar logic to mtd_read().
+	 */
+	ret_code = mtd->read_oob(mtd, from, ops);
+	if (unlikely(ret_code < 0))
+		return ret_code;
+	if (mtd->ecc_strength == 0)
+		return 0;	/* device lacks ecc */
+	return ret_code >= mtd->bitflip_threshold ? -EUCLEAN : 0;
+}
+
 static struct file_operations mtd_ops = {
 	.read   = mtd_op_read,
 #ifdef CONFIG_MTD_WRITE
@@ -290,33 +377,43 @@ static struct file_operations mtd_ops = {
 	.lseek  = dev_lseek_default,
 };
 
-int add_mtd_device(struct mtd_info *mtd, char *devname)
+int add_mtd_device(struct mtd_info *mtd, char *devname, int device_id)
 {
 	struct mtddev_hook *hook;
 
 	if (!devname)
 		devname = "mtd";
 	strcpy(mtd->class_dev.name, devname);
-	mtd->class_dev.id = DEVICE_ID_DYNAMIC;
+	mtd->class_dev.id = device_id;
 	if (mtd->parent)
 		mtd->class_dev.parent = mtd->parent;
 	register_device(&mtd->class_dev);
 
 	mtd->cdev.ops = &mtd_ops;
 	mtd->cdev.size = mtd->size;
-	mtd->cdev.name = asprintf("%s%d", devname, mtd->class_dev.id);
+	if (device_id == DEVICE_ID_SINGLE)
+		mtd->cdev.name = xstrdup(devname);
+	else
+		mtd->cdev.name = asprintf("%s%d", devname, mtd->class_dev.id);
+
 	mtd->cdev.priv = mtd;
 	mtd->cdev.dev = &mtd->class_dev;
 	mtd->cdev.mtd = mtd;
 
 	if (IS_ENABLED(CONFIG_PARAMETER)) {
-		dev_add_param_int_ro(&mtd->class_dev, "size", mtd->size, "%u");
+		dev_add_param_llint_ro(&mtd->class_dev, "size", mtd->size, "%llu");
 		dev_add_param_int_ro(&mtd->class_dev, "erasesize", mtd->erasesize, "%u");
-		dev_add_param_int_ro(&mtd->class_dev, "writesize", mtd->oobsize, "%u");
+		dev_add_param_int_ro(&mtd->class_dev, "writesize", mtd->writesize, "%u");
 		dev_add_param_int_ro(&mtd->class_dev, "oobsize", mtd->oobsize, "%u");
 	}
 
 	devfs_create(&mtd->cdev);
+
+	if (mtd_can_have_bb(mtd))
+		mtd->cdev_bb = mtd_add_bb(mtd, NULL);
+
+	if (mtd->parent && !mtd->master)
+		of_parse_partitions(&mtd->cdev, mtd->parent->device_node);
 
 	list_for_each_entry(hook, &mtd_register_hooks, hook)
 		if (hook->add_mtd_device)

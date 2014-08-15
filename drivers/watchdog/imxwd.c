@@ -15,6 +15,7 @@
 #include <common.h>
 #include <init.h>
 #include <io.h>
+#include <of.h>
 #include <errno.h>
 #include <malloc.h>
 #include <watchdog.h>
@@ -129,17 +130,17 @@ static void imx_watchdog_detect_reset_source(struct imx_wd *priv)
 	u16 val = readw(priv->base + IMX21_WDOG_WSTR);
 
 	if (val & WSTR_COLDSTART) {
-		set_reset_source(RESET_POR);
+		reset_source_set(RESET_POR);
 		return;
 	}
 
 	if (val & (WSTR_HARDRESET | WSTR_WARMSTART)) {
-		set_reset_source(RESET_RST);
+		reset_source_set(RESET_RST);
 		return;
 	}
 
 	if (val & WSTR_WDOG) {
-		set_reset_source(RESET_WDG);
+		reset_source_set(RESET_WDG);
 		return;
 	}
 
@@ -158,6 +159,10 @@ static int imx_wd_probe(struct device_d *dev)
 
 	priv = xzalloc(sizeof(struct imx_wd));
 	priv->base = dev_request_mem_region(dev, 0);
+	if (!priv->base) {
+		dev_err(dev, "could not get memory region\n");
+		return -ENODEV;
+	}
 	priv->set_timeout = fn;
 	priv->wd.set_timeout = imx_watchdog_set_timeout;
 	priv->dev = dev;

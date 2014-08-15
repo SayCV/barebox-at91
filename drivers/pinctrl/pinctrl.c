@@ -19,6 +19,8 @@
 #include <common.h>
 #include <malloc.h>
 #include <pinctrl.h>
+#include <errno.h>
+#include <of.h>
 
 static LIST_HEAD(pinctrl_list);
 
@@ -49,7 +51,7 @@ static int pinctrl_config_one(struct device_node *np)
 	return pdev->ops->set_state(pdev, np);
 }
 
-int pinctrl_select_state(struct device_d *dev, const char *name)
+int of_pinctrl_select_state(struct device_node *np, const char *name)
 {
 	int state, ret;
 	char *propname;
@@ -57,21 +59,17 @@ int pinctrl_select_state(struct device_d *dev, const char *name)
 	const __be32 *list;
 	int size, config;
 	phandle phandle;
-	struct device_node *np_config, *np;
+	struct device_node *np_config;
 	const char *statename;
 
-	np = dev->device_node;
-	if (!np)
-		return 0;
-
-	if (!of_find_property(np, "pinctrl-0"))
+	if (!of_find_property(np, "pinctrl-0", NULL))
 		return 0;
 
 	/* For each defined state ID */
 	for (state = 0; ; state++) {
 		/* Retrieve the pinctrl-* property */
 		propname = asprintf("pinctrl-%d", state);
-		prop = of_find_property(np, propname);
+		prop = of_find_property(np, propname, NULL);
 		free(propname);
 
 		if (!prop) {
@@ -123,6 +121,22 @@ int pinctrl_select_state(struct device_d *dev, const char *name)
 	}
 err:
 	return ret;
+}
+
+int of_pinctrl_select_state_default(struct device_node *np)
+{
+	return of_pinctrl_select_state(np, "default");
+}
+
+int pinctrl_select_state(struct device_d *dev, const char *name)
+{
+	struct device_node *np;
+
+	np = dev->device_node;
+	if (!np)
+		return 0;
+
+	return of_pinctrl_select_state(np, name);
 }
 
 int pinctrl_select_state_default(struct device_d *dev)

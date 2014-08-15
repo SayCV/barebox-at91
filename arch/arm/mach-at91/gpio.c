@@ -24,7 +24,7 @@
 #include <linux/err.h>
 #include <errno.h>
 #include <io.h>
-#include <mach/gpio.h>
+#include <mach/iomux.h>
 #include <mach/io.h>
 #include <mach/cpu.h>
 #include <gpio.h>
@@ -438,7 +438,7 @@ static void at91mux_dump_pio_config(unsigned bank, unsigned pin)
 	void __iomem *pio = at91_gpio->regbase;
 	u32 div;
 
-	printf("pio%c%d configuration\n\n", bank + 'A', pin);
+	printf("pio%c%u configuration\n\n", bank + 'A', pin);
 
 	at91mux_printf_mode(bank, pin);
 	printf("\n");
@@ -499,7 +499,7 @@ static int do_at91mux(int argc, char *argv[])
 	}
 
 	if (pin >= 32) {
-		printf("pin %d >= supported %d pins\n", pin, 32);
+		printf("pin %u >= supported %d pins\n", pin, 32);
 		return 1;
 	}
 
@@ -509,13 +509,19 @@ static int do_at91mux(int argc, char *argv[])
 }
 
 BAREBOX_CMD_HELP_START(at91mux)
-BAREBOX_CMD_HELP_USAGE("at91mux [-p <pin> -b <bank>]\n")
-BAREBOX_CMD_HELP_SHORT("dump current mux configuration if bank/pin specified dump pin details\n");
+BAREBOX_CMD_HELP_TEXT("Dump current MUX configuration. If a BANK or PIN has been")
+BAREBOX_CMD_HELP_TEXT("specified dump pin details.")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT ("-p PIN", "pin number")
+BAREBOX_CMD_HELP_OPT ("-b BANK", "bank number")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(at91mux)
 	.cmd		= do_at91mux,
-	.usage		= "dump current mux configuration",
+	BAREBOX_CMD_DESC("list MUX configuration")
+	BAREBOX_CMD_OPTS("[-pb]")
+	BAREBOX_CMD_GROUP(CMD_GRP_INFO)
 	BAREBOX_CMD_HELP(cmd_at91mux_help)
 	BAREBOX_CMD_COMPLETE(empty_complete)
 BAREBOX_CMD_END

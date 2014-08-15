@@ -55,10 +55,6 @@
  .	03/16/01  Daris A Nevil	   Modified smc9194.c for use with LAN91C111
  ----------------------------------------------------------------------------*/
 
-#ifdef CONFIG_ENABLE_DEVICE_NOISE
-# define DEBUG
-#endif
-
 #include <common.h>
 
 #include <command.h>
@@ -70,6 +66,7 @@
 #include <clock.h>
 #include <io.h>
 #include <linux/phy.h>
+#include <net/smc91111.h>
 
 /*---------------------------------------------------------------
  .
@@ -450,6 +447,7 @@ struct smc91c111_priv {
 	struct mii_bus miibus;
 	struct accessors a;
 	void __iomem *base;
+	int qemu_fixup;
 };
 
 #if (SMC_DEBUG > 2 )
@@ -886,6 +884,7 @@ static void smc91c111_enable(struct eth_device *edev)
 static int smc91c111_eth_open(struct eth_device *edev)
 {
 	struct smc91c111_priv *priv = (struct smc91c111_priv *)edev->priv;
+	int ret;
 
 	/* Configure the Receive/Phy Control register */
 	SMC_SELECT_BANK(priv, 0);
@@ -893,8 +892,27 @@ static int smc91c111_eth_open(struct eth_device *edev)
 
 	smc91c111_enable(edev);
 
-	return phy_device_connect(edev, &priv->miibus, 0, NULL,
+	ret = phy_device_connect(edev, &priv->miibus, 0, NULL,
 				 0, PHY_INTERFACE_MODE_NA);
+
+	if (ret)
+		return ret;
+
+	if (priv->qemu_fixup && edev->phydev->phy_id == 0x00000000) {
+		struct phy_device *dev = edev->phydev;
+
+		dev->speed = SPEED_100;
+		dev->duplex = DUPLEX_FULL;
+		dev->autoneg = !AUTONEG_ENABLE;
+		dev->force = 1;
+		dev->link = 1;
+
+		dev_info(edev->parent, "phy with id 0x%08x detected this might be qemu\n",
+			dev->phy_id);
+		dev_info(edev->parent, "force link at 100Mpbs\n");
+	}
+
+	return 0;
 }
 
 static int smc91c111_eth_send(struct eth_device *edev, void *packet,
@@ -1151,7 +1169,7 @@ static int smc91c111_eth_rx(struct eth_device *edev)
 
 	if (!is_error) {
 		/* Pass the packet up to the protocol layers. */
-		net_receive(NetRxPackets[0], packet_length);
+		net_receive(edev, NetRxPackets[0], packet_length);
 		return 0;
 	}
 
@@ -1289,6 +1307,12 @@ static int smc91c111_probe(struct device_d *dev)
 	edev->priv = (struct smc91c111_priv *)(edev + 1);
 
 	priv = edev->priv;
+
+	if (dev->platform_data) {
+		struct smc91c111_pdata *pdata = dev->platform_data;
+
+		priv->qemu_fixup = pdata->qemu_fixup;
+	}
 
 	priv->a = access_via_32bit;
 

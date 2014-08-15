@@ -19,8 +19,8 @@ struct image *bmp_open(char *inbuf, int insize)
 	}
 
 	img->data = inbuf;
-	img->height = le32_to_cpu(bmp->header.height);;
-	img->width = le32_to_cpu(bmp->header.width);;
+	img->height = le32_to_cpu(bmp->header.height);
+	img->width = le32_to_cpu(bmp->header.width);
 	img->bits_per_pixel = le16_to_cpu(bmp->header.bit_count);
 
 	pr_debug("bmp: %d x %d  x %d data@0x%p\n", img->width, img->height,
@@ -78,8 +78,8 @@ static int bmp_renderer(struct screen *sc, struct surface *s, struct image *img)
 			image = (char *)bmp +
 					le32_to_cpu(bmp->header.data_offset);
 			image += (img->height - y - 1) * img->width * (bits_per_pixel >> 3);
-			adr = buf + ((y + starty) * sc->s.width + startx) *
-					(sc->info.bits_per_pixel >> 3);
+			adr = buf + (y + starty) * sc->info.line_length +
+					startx * (sc->info.bits_per_pixel >> 3);
 			for (x = 0; x < width; x++) {
 				int pixel;
 
@@ -100,8 +100,8 @@ static int bmp_renderer(struct screen *sc, struct surface *s, struct image *img)
 			image = (char *)bmp +
 					le32_to_cpu(bmp->header.data_offset);
 			image += (img->height - y - 1) * img->width * (bits_per_pixel >> 3);
-			adr = buf + ((y + starty) * sc->s.width + startx) *
-					(sc->info.bits_per_pixel >> 3);
+			adr = buf + (y + starty) * sc->info.line_length +
+					startx * (sc->info.bits_per_pixel >> 3);
 			for (x = 0; x < width; x++) {
 				char *pixel;
 

@@ -9,18 +9,14 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
  */
 
 #include <common.h>
 #include <io.h>
 #include <init.h>
+#include <gpio.h>
 #include <mci.h>
 #include <asm/armlinux.h>
-#include <mach/gpio.h>
 #include <mach/generic.h>
 #include <mach/imx51-regs.h>
 #include <mach/iomux-mx51.h>
@@ -29,7 +25,8 @@
 
 #include "ccxmx51.h"
 
-#define CCXMX51JS_USBHOST1_RESET	IMX_GPIO_NR(3, 8)
+#define CCXMX51JS_USBH1_RESET	IMX_GPIO_NR(3, 8)
+#define CCXMX51JS_SD3_WP	IMX_GPIO_NR(3, 17)
 
 static iomux_v3_cfg_t ccxmx51js_pads[] = {
 	/* SD1 */
@@ -63,19 +60,19 @@ static iomux_v3_cfg_t ccxmx51js_pads[] = {
 	MX51_PAD_USBH1_DATA5__USBH1_DATA5,
 	MX51_PAD_USBH1_DATA6__USBH1_DATA6,
 	MX51_PAD_USBH1_DATA7__USBH1_DATA7,
-	MX51_PAD_DISPB2_SER_RS__GPIO3_8,	/* Reset */
 };
 
 static struct esdhc_platform_data sdhc1_pdata = {
 	.cd_type	= ESDHC_CD_NONE,
 	.wp_type	= ESDHC_WP_NONE,
-	.caps		= MMC_MODE_4BIT,
+	.caps		= MMC_CAP_4_BIT_DATA,
 };
 
 static struct esdhc_platform_data sdhc3_pdata = {
 	.cd_type	= ESDHC_CD_NONE,
-	.wp_type	= ESDHC_WP_NONE,
-	.caps		= MMC_MODE_4BIT | MMC_MODE_8BIT,
+	.wp_type	= ESDHC_WP_GPIO,
+	.wp_gpio	= CCXMX51JS_SD3_WP,
+	.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
 };
 
 static struct imxusb_platformdata ccxmx51js_usbhost1_pdata = {
@@ -92,9 +89,9 @@ static int ccxmx51js_init(void)
 		imx51_add_mmc2(&sdhc3_pdata);
 	}
 
-	gpio_direction_output(CCXMX51JS_USBHOST1_RESET, 0);
+	gpio_direction_output(CCXMX51JS_USBH1_RESET, 0);
 	mdelay(10);
-	gpio_set_value(CCXMX51JS_USBHOST1_RESET, 1);
+	gpio_set_value(CCXMX51JS_USBH1_RESET, 1);
 	mdelay(10);
 	imx51_add_usbh1(&ccxmx51js_usbhost1_pdata);
 

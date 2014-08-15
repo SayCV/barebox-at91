@@ -34,6 +34,7 @@
 #include <asm/byteorder.h>
 #include <block.h>
 #include <disks.h>
+#include <of.h>
 #include <linux/err.h>
 
 #define MAX_BUFFER_NUMBER 0xffffffff
@@ -66,6 +67,11 @@
  * - Transcend SDHC, 8 GiB (Class 6)
  */
 
+static inline unsigned mci_caps(struct mci *mci)
+{
+	return mci->card_caps & mci->host->host_caps;
+}
+
 /**
  * Call the MMC/SD instance driver to run the command on the MMC/SD card
  * @param mci MCI instance
@@ -93,6 +99,20 @@ static void mci_setup_cmd(struct mci_cmd *p, unsigned cmd, unsigned arg, unsigne
 	p->cmdidx = cmd;
 	p->cmdarg = arg;
 	p->resp_type = response;
+}
+
+/**
+ * configure optional DSR value
+ * @param mci_dev MCI instance
+ * @return Transaction status (0 on success)
+ */
+static int mci_set_dsr(struct mci *mci)
+{
+	struct mci_cmd cmd;
+
+	mci_setup_cmd(&cmd, MMC_CMD_SET_DSR,
+			(mci->host->dsr_val >> 16) | 0xffff, MMC_RSP_NONE);
+	return mci_send_cmd(mci, &cmd, NULL);
 }
 
 /**
@@ -401,7 +421,7 @@ static int mci_calc_blk_cnt(uint64_t cap, unsigned shift)
 }
 
 static void mci_part_add(struct mci *mci, uint64_t size,
-                        unsigned int part_cfg, char *name, int idx, bool ro,
+                        unsigned int part_cfg, char *name, char *partname, int idx, bool ro,
                         int area_type)
 {
 	struct mci_part *part = &mci->part[mci->nr_parts];
@@ -409,6 +429,7 @@ static void mci_part_add(struct mci *mci, uint64_t size,
 	part->mci = mci;
 	part->size = size;
 	part->blk.cdev.name = name;
+	part->blk.cdev.partname = partname;
 	part->blk.blockbits = SECTOR_SHIFT;
 	part->blk.num_blocks = mci_calc_blk_cnt(size, part->blk.blockbits);
 	part->area_type = area_type;
@@ -434,7 +455,7 @@ static int mmc_change_freq(struct mci *mci)
 	if (mci->version < MMC_VERSION_4)
 		return 0;
 
-	mci->card_caps |= MMC_MODE_4BIT;
+	mci->card_caps |= MMC_CAP_4_BIT_DATA;
 
 	err = mci_send_ext_csd(mci, mci->ext_csd);
 	if (err) {
@@ -467,9 +488,9 @@ static int mmc_change_freq(struct mci *mci)
 
 	/* High Speed is set, there are two types: 52MHz and 26MHz */
 	if (cardtype & EXT_CSD_CARD_TYPE_52)
-		mci->card_caps |= MMC_MODE_HS_52MHz | MMC_MODE_HS;
+		mci->card_caps |= MMC_CAP_MMC_HIGHSPEED_52MHZ | MMC_CAP_MMC_HIGHSPEED;
 	else
-		mci->card_caps |= MMC_MODE_HS;
+		mci->card_caps |= MMC_CAP_MMC_HIGHSPEED;
 
 	if (IS_ENABLED(CONFIG_MCI_MMC_BOOT_PARTITIONS) &&
 			mci->ext_csd[EXT_CSD_REV] >= 3 && mci->ext_csd[EXT_CSD_BOOT_MULT]) {
@@ -477,13 +498,14 @@ static int mmc_change_freq(struct mci *mci)
 		unsigned int part_size;
 
 		for (idx = 0; idx < MMC_NUM_BOOT_PARTITION; idx++) {
-			char *name;
+			char *name, *partname;
 			part_size = mci->ext_csd[EXT_CSD_BOOT_MULT] << 17;
 
-			name = asprintf("%s.boot%d", mci->cdevname, idx);
+			partname = asprintf("boot%d", idx);
+			name = asprintf("%s.%s", mci->cdevname, partname);
 			mci_part_add(mci, part_size,
 					EXT_CSD_PART_CONFIG_ACC_BOOT0 + idx,
-					name, idx, true,
+					name, partname, idx, true,
 					MMC_BLK_DATA_AREA_BOOT);
 		}
 
@@ -534,9 +556,7 @@ static int sd_change_freq(struct mci *mci)
 {
 	struct mci_cmd cmd;
 	struct mci_data data;
-#ifdef CONFIG_MCI_SPI
 	struct mci_host *host = mci->host;
-#endif
 	uint32_t *switch_status = sector_buf;
 	uint32_t *scr = sector_buf;
 	int timeout;
@@ -596,6 +616,9 @@ retry_scr:
 		break;
 	}
 
+	if (mci->scr[0] & SD_DATA_4BIT)
+		mci->card_caps |= MMC_CAP_4_BIT_DATA;
+
 	/* Version 1.0 doesn't support switching */
 	if (mci->version == SD_VERSION_1_0)
 		return 0;
@@ -614,9 +637,6 @@ retry_scr:
 			break;
 	}
 
-	if (mci->scr[0] & SD_DATA_4BIT)
-		mci->card_caps |= MMC_MODE_4BIT;
-
 	/* If high-speed isn't supported, we return */
 	if (!(__be32_to_cpu(switch_status[3]) & SD_HIGHSPEED_SUPPORTED))
 		return 0;
@@ -628,7 +648,7 @@ retry_scr:
 	}
 
 	if ((__be32_to_cpu(switch_status[4]) & 0x0f000000) == 0x01000000)
-		mci->card_caps |= MMC_MODE_HS;
+		mci->card_caps |= MMC_CAP_SD_HIGHSPEED;
 
 	return 0;
 }
@@ -664,10 +684,6 @@ static void mci_set_clock(struct mci *mci, unsigned clock)
 	if (clock < host->f_min)
 		clock = host->f_min;
 
-	/* check against the limit at the card's side */
-	if (mci->tran_speed != 0 && clock > mci->tran_speed)
-		clock = mci->tran_speed;
-
 	host->clock = clock;	/* the new target frequency */
 	mci_set_ios(mci);
 }
@@ -693,7 +709,6 @@ static void mci_set_bus_width(struct mci *mci, unsigned width)
 static void mci_detect_version_from_csd(struct mci *mci)
 {
 	int version;
-	char *vstr;
 
 	if (mci->version == MMC_VERSION_UNKNOWN) {
 		/* the version is coded in the bits 127:126 (left aligned) */
@@ -701,32 +716,52 @@ static void mci_detect_version_from_csd(struct mci *mci)
 
 		switch (version) {
 		case 0:
-			vstr = "1.2";
 			mci->version = MMC_VERSION_1_2;
 			break;
 		case 1:
-			vstr = "1.4";
 			mci->version = MMC_VERSION_1_4;
 			break;
 		case 2:
-			vstr = "2.2";
 			mci->version = MMC_VERSION_2_2;
 			break;
 		case 3:
-			vstr = "3.0";
 			mci->version = MMC_VERSION_3;
 			break;
 		case 4:
-			vstr = "4.0";
 			mci->version = MMC_VERSION_4;
 			break;
 		default:
-			vstr = "unknown, fallback to 1.2";
+			printf("unknown card version, fallback to 1.02\n");
 			mci->version = MMC_VERSION_1_2;
 			break;
 		}
+	}
+}
 
-		dev_info(&mci->dev, "detected card version %s\n", vstr);
+/**
+ * correct the version from ext_csd data if it's not an SD-card, detected
+ * version is at least 4 and we have ext_csd data
+ */
+static void mci_correct_version_from_ext_csd(struct mci *mci)
+{
+	if (!IS_SD(mci) && (mci->version >= MMC_VERSION_4) && mci->ext_csd) {
+		switch (mci->ext_csd[EXT_CSD_REV]) {
+		case 1:
+			mci->version = MMC_VERSION_4_1;
+			break;
+		case 2:
+			mci->version = MMC_VERSION_4_2;
+			break;
+		case 3:
+			mci->version = MMC_VERSION_4_3;
+			break;
+		case 5:
+			mci->version = MMC_VERSION_4_41;
+			break;
+		case 6:
+			mci->version = MMC_VERSION_4_5;
+			break;
+		}
 	}
 }
 
@@ -830,8 +865,17 @@ static void mci_extract_card_capacity_from_csd(struct mci *mci)
 		mci->capacity = (csize + 1) << (cmult + 2);
 	}
 
-	mci->capacity *= 1 << UNSTUFF_BITS(mci->csd, 80, 4);;
+	mci->capacity *= 1 << UNSTUFF_BITS(mci->csd, 80, 4);
 	dev_dbg(&mci->dev, "Capacity: %u MiB\n", (unsigned)(mci->capacity >> 20));
+}
+
+/**
+ * Extract card's DSR implementation state from CSD
+ * @param mci MCI instance
+ */
+static void mci_extract_card_dsr_imp_from_csd(struct mci *mci)
+{
+	mci->dsr_imp = UNSTUFF_BITS(mci->csd, 76, 1);
 }
 
 static int mmc_compare_ext_csds(struct mci *mci, unsigned bus_width)
@@ -895,12 +939,27 @@ out:
 	return err;
 }
 
+static char *mci_version_string(struct mci *mci)
+{
+	static char version[sizeof("x.xx")];
+	unsigned major, minor, micro;
+
+	major = (mci->version >> 8) & 0xf;
+	minor = (mci->version >> 4) & 0xf;
+	micro = mci->version & 0xf;
+
+	sprintf(version, "%u.%u", major,
+			micro ? (minor << 4) | micro : minor);
+
+	return version;
+}
+
 static int mci_startup_sd(struct mci *mci)
 {
 	struct mci_cmd cmd;
 	int err;
 
-	if (mci->card_caps & MMC_MODE_4BIT) {
+	if (mci_caps(mci) & MMC_CAP_4_BIT_DATA) {
 		dev_dbg(&mci->dev, "Prepare for bus width change\n");
 		mci_setup_cmd(&cmd, MMC_CMD_APP_CMD, mci->rca << 16, MMC_RSP_R1);
 		err = mci_send_cmd(mci, &cmd, NULL);
@@ -919,11 +978,8 @@ static int mci_startup_sd(struct mci *mci)
 		}
 		mci_set_bus_width(mci, MMC_BUS_WIDTH_4);
 	}
-	/* if possible, speed up the transfer */
-	if (mci->card_caps & MMC_MODE_HS)
-		mci_set_clock(mci, 50000000);
-	else
-		mci_set_clock(mci, 25000000);
+
+	mci_set_clock(mci, mci->tran_speed);
 
 	return 0;
 }
@@ -943,14 +999,14 @@ static int mci_startup_mmc(struct mci *mci)
 	};
 
 	/* if possible, speed up the transfer */
-	if (mci->card_caps & MMC_MODE_HS) {
-		if (mci->card_caps & MMC_MODE_HS_52MHz)
-			mci_set_clock(mci, 52000000);
+	if (mci_caps(mci) & MMC_CAP_MMC_HIGHSPEED) {
+		if (mci->card_caps & MMC_CAP_MMC_HIGHSPEED_52MHZ)
+			mci->tran_speed = 52000000;
 		else
-			mci_set_clock(mci, 26000000);
-	} else {
-		mci_set_clock(mci, 20000000);
+			mci->tran_speed = 26000000;
 	}
+
+	mci_set_clock(mci, mci->tran_speed);
 
 	/*
 	 * Unlike SD, MMC cards dont have a configuration register to notify
@@ -958,7 +1014,7 @@ static int mci_startup_mmc(struct mci *mci)
 	 * the supported bus width or compare the ext csd values of current
 	 * bus width and ext csd values of 1 bit mode read earlier.
 	 */
-	if (host->host_caps & MMC_MODE_8BIT)
+	if (host->host_caps & MMC_CAP_8_BIT_DATA)
 		idx = 1;
 
 	for (; idx >= 0; idx--) {
@@ -997,8 +1053,7 @@ static int mci_startup(struct mci *mci)
 	struct mci_cmd cmd;
 	int err;
 
-#ifdef CONFIG_MMC_SPI_CRC_ON
-	if (mmc_host_is_spi(host)) { /* enable CRC check for spi */
+	if (IS_ENABLED(CONFIG_MMC_SPI_CRC_ON) && mmc_host_is_spi(host)) { /* enable CRC check for spi */
 
 		mci_setup_cmd(&cmd, MMC_CMD_SPI_CRC_ON_OFF, 1, MMC_RSP_R1);
 		err = mci_send_cmd(mci, &cmd, NULL);
@@ -1008,7 +1063,6 @@ static int mci_startup(struct mci *mci)
 			return err;
 		}
 	}
-#endif
 
 	dev_dbg(&mci->dev, "Put the Card in Identify Mode\n");
 
@@ -1061,6 +1115,7 @@ static int mci_startup(struct mci *mci)
 	mci_detect_version_from_csd(mci);
 	mci_extract_max_tran_speed_from_csd(mci);
 	mci_extract_block_lengths_from_csd(mci);
+	mci_extract_card_dsr_imp_from_csd(mci);
 
 	/* sanitiy? */
 	if (mci->read_bl_len > SECTOR_SIZE) {
@@ -1076,6 +1131,9 @@ static int mci_startup(struct mci *mci)
 	}
 	dev_dbg(&mci->dev, "Read block length: %u, Write block length: %u\n",
 		mci->read_bl_len, mci->write_bl_len);
+
+	if (mci->dsr_imp && mci->host->use_dsr)
+		mci_set_dsr(mci);
 
 	if (!mmc_host_is_spi(host)) { /* cmd not supported in spi */
 		dev_dbg(&mci->dev, "Select the card, and put it into Transfer Mode\n");
@@ -1096,10 +1154,10 @@ static int mci_startup(struct mci *mci)
 	if (err)
 		return err;
 
+	mci_correct_version_from_ext_csd(mci);
+	dev_info(&mci->dev, "detected %s card version %s\n", IS_SD(mci) ? "SD" : "MMC",
+		mci_version_string(mci));
 	mci_extract_card_capacity_from_csd(mci);
-
-	/* Restrict card's capabilities by what the host can do */
-	mci->card_caps &= host->host_caps;
 
 	if (IS_SD(mci))
 		err = mci_startup_sd(mci);
@@ -1113,7 +1171,7 @@ static int mci_startup(struct mci *mci)
 	err = mci_set_blocklen(mci, mci->read_bl_len);
 
 	mci_part_add(mci, mci->capacity, 0,
-			mci->cdevname, 0, true,
+			mci->cdevname, NULL, 0, true,
 			MMC_BLK_DATA_AREA_MAIN);
 
 	return err;
@@ -1206,6 +1264,11 @@ static int __maybe_unused mci_sd_write(struct block_device *blk,
 	struct mci *mci = part->mci;
 	struct mci_host *host = mci->host;
 	int rc;
+	unsigned max_req_block = num_blocks;
+	int write_block;
+
+	if (mci->host->max_req_size)
+		max_req_block = mci->host->max_req_size / mci->write_bl_len;
 
 	mci_blk_part_switch(part);
 
@@ -1229,10 +1292,16 @@ static int __maybe_unused mci_sd_write(struct block_device *blk,
 		return -EINVAL;
 	}
 
-	rc = mci_block_write(mci, buffer, block, num_blocks);
-	if (rc != 0) {
-		dev_dbg(&mci->dev, "Writing block %d failed with %d\n", block, rc);
-		return rc;
+	while (num_blocks) {
+		write_block = min_t(int, num_blocks, max_req_block);
+		rc = mci_block_write(mci, buffer, block, write_block);
+		if (rc != 0) {
+			dev_dbg(&mci->dev, "Writing block %d failed with %d\n", block, rc);
+			return rc;
+		}
+		num_blocks -= write_block;
+		block += write_block;
+		buffer += write_block * mci->write_bl_len;
 	}
 
 	return 0;
@@ -1253,7 +1322,12 @@ static int mci_sd_read(struct block_device *blk, void *buffer, int block,
 {
 	struct mci_part *part = container_of(blk, struct mci_part, blk);
 	struct mci *mci = part->mci;
+	unsigned max_req_block = num_blocks;
+	int read_block;
 	int rc;
+
+	if (mci->host->max_req_size)
+		max_req_block = mci->host->max_req_size / mci->read_bl_len;
 
 	mci_blk_part_switch(part);
 
@@ -1271,10 +1345,16 @@ static int mci_sd_read(struct block_device *blk, void *buffer, int block,
 		return -EINVAL;
 	}
 
-	rc = mci_read_block(mci, buffer, block, num_blocks);
-	if (rc != 0) {
-		dev_dbg(&mci->dev, "Reading block %d failed with %d\n", block, rc);
-		return rc;
+	while (num_blocks) {
+		read_block = min_t(int, num_blocks, max_req_block);
+		rc = mci_read_block(mci, buffer, block, read_block);
+		if (rc != 0) {
+			dev_dbg(&mci->dev, "Reading block %d failed with %d\n", block, rc);
+			return rc;
+		}
+		num_blocks -= read_block;
+		block += read_block;
+		buffer += read_block * mci->read_bl_len;
 	}
 
 	return 0;
@@ -1360,10 +1440,27 @@ static unsigned extract_mtd_month(struct mci *mci)
  */
 static unsigned extract_mtd_year(struct mci *mci)
 {
+	unsigned year;
 	if (IS_SD(mci))
-		return UNSTUFF_BITS(mci->cid, 12, 8) + 2000;
-	else
+		year = UNSTUFF_BITS(mci->cid, 12, 8) + 2000;
+	else if (mci->version < MMC_VERSION_4_41)
 		return UNSTUFF_BITS(mci->cid, 8, 4) + 1997;
+	else {
+		year = UNSTUFF_BITS(mci->cid, 8, 4) + 1997;
+		if (year < 2010)
+			year += 16;
+	}
+	return year;
+}
+
+static void mci_print_caps(unsigned caps)
+{
+	printf("  capabilities: %s%s%s%s%s\n",
+		caps & MMC_CAP_4_BIT_DATA ? "4bit " : "",
+		caps & MMC_CAP_8_BIT_DATA ? "8bit " : "",
+		caps & MMC_CAP_SD_HIGHSPEED ? "sd-hs " : "",
+		caps & MMC_CAP_MMC_HIGHSPEED ? "mmc-hs " : "",
+		caps & MMC_CAP_MMC_HIGHSPEED_52MHZ ? "mmc-52MHz " : "");
 }
 
 /**
@@ -1373,20 +1470,30 @@ static unsigned extract_mtd_year(struct mci *mci)
 static void mci_info(struct device_d *dev)
 {
 	struct mci *mci = container_of(dev, struct mci, dev);
+	struct mci_host *host = mci->host;
+	int bw;
 
 	if (mci->ready_for_use == 0) {
 		printf(" No information available:\n  MCI card not probed yet\n");
 		return;
 	}
 
-	printf(" Card:\n");
-	if (mci->version < SD_VERSION_SD) {
-		printf("  Attached is a MultiMediaCard (Version: %u.%u)\n",
-			(mci->version >> 4) & 0xf, mci->version & 0xf);
-	} else {
-		printf("  Attached is an SD Card (Version: %u.%u)\n",
-			(mci->version >> 4) & 0xf, mci->version & 0xf);
-	}
+	printf("Host information:\n");
+	printf("  current clock: %d\n", host->clock);
+
+	if (host->bus_width == MMC_BUS_WIDTH_8)
+		bw = 8;
+	else if (host->bus_width == MMC_BUS_WIDTH_4)
+		bw = 4;
+	else
+		bw = 1;
+
+	printf("  current buswidth: %d\n", bw);
+	mci_print_caps(host->host_caps);
+
+	printf("Card information:\n");
+	printf("  Attached is a %s card\n", IS_SD(mci) ? "SD" : "MMC");
+	printf("  Version: %s\n", mci_version_string(mci));
 	printf("  Capacity: %u MiB\n", (unsigned)(mci->capacity >> 20));
 
 	if (mci->high_capacity)
@@ -1396,6 +1503,7 @@ static void mci_info(struct device_d *dev)
 	printf("   CSD: %08X-%08X-%08X-%08X\n", mci->csd[0], mci->csd[1],
 		mci->csd[2], mci->csd[3]);
 	printf("  Max. transfer speed: %u Hz\n", mci->tran_speed);
+	mci_print_caps(mci->card_caps);
 	printf("  Manufacturer ID: %02X\n", extract_mid(mci));
 	printf("  OEM/Application ID: %04X\n", extract_oid(mci));
 	printf("  Product name: '%c%c%c%c%c'\n", mci->cid[0] & 0xff,
@@ -1462,18 +1570,26 @@ static const char *mci_boot_names[] = {
 static int mci_card_probe(struct mci *mci)
 {
 	struct mci_host *host = mci->host;
-	int i, rc, disknum;
+	int i, rc, disknum, ret;
 
-	if (host->card_present && !host->card_present(host)) {
+	if (host->card_present && !host->card_present(host) &&
+	    !host->non_removable) {
 		dev_err(&mci->dev, "no card inserted\n");
 		return -ENODEV;
+	}
+
+	ret = regulator_enable(host->supply);
+	if (ret) {
+		dev_err(&mci->dev, "failed to enable regulator: %s\n",
+				strerror(-ret));
+		return ret;
 	}
 
 	/* start with a host interface reset */
 	rc = (host->init)(host, &mci->dev);
 	if (rc) {
 		dev_err(&mci->dev, "Cannot reset the SD/MMC interface\n");
-		return rc;
+		goto on_error;
 	}
 
 	mci_set_bus_width(mci, MMC_BUS_WIDTH_1);
@@ -1539,6 +1655,7 @@ static int mci_card_probe(struct mci *mci)
 				dev_warn(&mci->dev, "No partition table found\n");
 				rc = 0; /* it's not a failure */
 			}
+			of_parse_partitions(&part->blk.cdev, host->hw_dev->device_node);
 		}
 
 		if (IS_ENABLED(CONFIG_MCI_MMC_BOOT_PARTITIONS) &&
@@ -1556,6 +1673,7 @@ on_error:
 	if (rc != 0) {
 		host->clock = 0;	/* disable the MCI clock */
 		mci_set_ios(mci);
+		regulator_disable(host->supply);
 	}
 
 	return rc;
@@ -1641,6 +1759,12 @@ int mci_register(struct mci_host *host)
 	host->mci = mci;
 	mci->dev.detect = mci_detect;
 
+	host->supply = regulator_get(host->hw_dev, "vmmc");
+	if (IS_ERR(host->supply)) {
+		ret = PTR_ERR(host->supply);
+		goto err_free;
+	}
+
 	ret = register_device(&mci->dev);
 	if (ret)
 		goto err_free;
@@ -1676,6 +1800,7 @@ void mci_of_parse(struct mci_host *host)
 {
 	struct device_node *np;
 	u32 bus_width;
+	u32 dsr_val;
 
 	if (!IS_ENABLED(CONFIG_OFDEVICE))
 		return;
@@ -1694,18 +1819,27 @@ void mci_of_parse(struct mci_host *host)
 
 	switch (bus_width) {
 	case 8:
-		host->host_caps |= MMC_MODE_8BIT;
+		host->host_caps |= MMC_CAP_8_BIT_DATA;
 		/* Hosts capable of 8-bit transfers can also do 4 bits */
 	case 4:
-		host->host_caps |= MMC_MODE_4BIT;
+		host->host_caps |= MMC_CAP_4_BIT_DATA;
 		break;
 	case 1:
 		break;
 	default:
 		dev_err(host->hw_dev,
-			"Invalid \"bus-width\" value %ud!\n", bus_width);
+			"Invalid \"bus-width\" value %u!\n", bus_width);
 	}
 
 	/* f_max is obtained from the optional "max-frequency" property */
 	of_property_read_u32(np, "max-frequency", &host->f_max);
+
+	if (!of_property_read_u32(np, "dsr", &dsr_val)) {
+		if (dsr_val < 0x10000) {
+			host->use_dsr = 1;
+			host->dsr_val = dsr_val;
+		}
+	}
+
+	host->non_removable = of_property_read_bool(np, "non-removable");
 }

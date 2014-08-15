@@ -24,8 +24,10 @@
 #include <errno.h>
 #include <xfuncs.h>
 #include <io.h>
+#include <stmp-device.h>
+#include <linux/clk.h>
+#include <linux/err.h>
 #include <mach/imx-regs.h>
-#include <mach/clock.h>
 #include <mach/fb.h>
 
 #define HW_LCDIF_CTRL 0x00
@@ -144,6 +146,7 @@ struct imxfb_info {
 	struct fb_info info;
 	struct device_d *hw_dev;
 	struct imx_fb_platformdata *pdata;
+	struct clk *clk;
 };
 
 /* the RGB565 true colour mode */
@@ -220,7 +223,7 @@ static void stmfb_enable_controller(struct fb_info *fb_info)
 	 * Sometimes some data is still present in the FIFO. This leads into
 	 * a correct but shifted picture. Clearing the FIFO helps
 	 */
-	writel(CTRL1_FIFO_CLEAR, fbi->base + HW_LCDIF_CTRL1 + BIT_SET);
+	writel(CTRL1_FIFO_CLEAR, fbi->base + HW_LCDIF_CTRL1 + STMP_OFFSET_REG_SET);
 
 	/* if it was disabled, re-enable the mode again */
 	reg = readl(fbi->base + HW_LCDIF_CTRL);
@@ -253,14 +256,14 @@ static void stmfb_enable_controller(struct fb_info *fb_info)
 	}
 
 	/* stop FIFO reset */
-	writel(CTRL1_FIFO_CLEAR, fbi->base + HW_LCDIF_CTRL1 + BIT_CLR);
+	writel(CTRL1_FIFO_CLEAR, fbi->base + HW_LCDIF_CTRL1 + STMP_OFFSET_REG_CLR);
 
 	/* enable LCD using LCD_RESET signal*/
 	if (fbi->pdata->flags & USE_LCD_RESET)
-		writel(CTRL1_RESET,  fbi->base + HW_LCDIF_CTRL1 + BIT_SET);
+		writel(CTRL1_RESET,  fbi->base + HW_LCDIF_CTRL1 + STMP_OFFSET_REG_SET);
 
 	/* start the engine right now */
-	writel(CTRL_RUN, fbi->base + HW_LCDIF_CTRL + BIT_SET);
+	writel(CTRL_RUN, fbi->base + HW_LCDIF_CTRL + STMP_OFFSET_REG_SET);
 
 	if (fbi->pdata->enable)
 		fbi->pdata->enable(1);
@@ -275,7 +278,7 @@ static void stmfb_disable_controller(struct fb_info *fb_info)
 
 	/* disable LCD using LCD_RESET signal*/
 	if (fbi->pdata->flags & USE_LCD_RESET)
-		writel(CTRL1_RESET,  fbi->base + HW_LCDIF_CTRL1 + BIT_CLR);
+		writel(CTRL1_RESET,  fbi->base + HW_LCDIF_CTRL1 + STMP_OFFSET_REG_CLR);
 
 	if (fbi->pdata->enable)
 		fbi->pdata->enable(0);
@@ -327,8 +330,8 @@ static int stmfb_activate_var(struct fb_info *fb_info)
 
 	/** @todo ensure HCLK is active at this point of time! */
 
-	size = imx_set_lcdifclk(PICOS2KHZ(mode->pixclock) * 1000);
-	if (size == 0) {
+	size = clk_set_rate(fbi->clk, PICOS2KHZ(mode->pixclock) * 1000);
+	if (size != 0) {
 		dev_dbg(fbi->hw_dev, "Unable to set a valid pixel clock\n");
 		return -EINVAL;
 	}
@@ -490,11 +493,15 @@ static int stmfb_probe(struct device_d *hw_dev)
 	fbi.hw_dev = hw_dev;
 	fbi.base = dev_request_mem_region(hw_dev, 0);
 	fbi.pdata = pdata;
+	fbi.clk = clk_get(hw_dev, NULL);
+	if (IS_ERR(fbi.clk))
+		return PTR_ERR(fbi.clk);
+	clk_enable(fbi.clk);
 
 	/* add runtime video info */
-	fbi.info.mode_list = pdata->mode_list;
-	fbi.info.num_modes = pdata->mode_cnt;
-	fbi.info.mode = &fbi.info.mode_list[0];
+	fbi.info.modes.modes = pdata->mode_list;
+	fbi.info.modes.num_modes = pdata->mode_cnt;
+	fbi.info.mode = &fbi.info.modes.modes[0];
 	fbi.info.xres = fbi.info.mode->xres;
 	fbi.info.yres = fbi.info.mode->yres;
 	if (pdata->bits_per_pixel)

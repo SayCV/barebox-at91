@@ -22,6 +22,7 @@
 #include <mach/at91sam9_smc.h>
 #include <mach/board.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <nand.h>
 
 #define BOOTSTRAP_SIZE	0xC0000
@@ -149,8 +150,6 @@ static int evk_devices_init(void)
 	at91_add_device_udc(&evk_udc_data);
 	evk_usb_add_device_mci();
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
-
 	devfs_add_partition("nand0", 0x00000, BOOTSTRAP_SIZE,
 			    DEVFS_PARTITION_FIXED, "bootstrap_raw");
 	dev_add_bb_dev("bootstrap_raw", "bootstrap");
@@ -170,7 +169,17 @@ device_initcall(evk_devices_init);
 
 static int evk_console_init(void)
 {
+	barebox_set_model("Telit EVK-PRO3");
+	barebox_set_hostname("evkpr03");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 console_initcall(evk_console_init);
+
+static int evk_main_clock(void)
+{
+	at91_set_main_clock(6000000);
+	return 0;
+}
+pure_initcall(evk_main_clock);

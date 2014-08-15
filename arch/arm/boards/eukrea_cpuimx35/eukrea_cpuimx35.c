@@ -33,13 +33,13 @@
 #include <nand.h>
 #include <net.h>
 #include <partition.h>
+#include <gpio.h>
 
 #include <asm/armlinux.h>
 #include <io.h>
 #include <generated/mach-types.h>
 #include <asm/mmu.h>
 
-#include <mach/gpio.h>
 #include <mach/imx-nand.h>
 #include <mach/imx35-regs.h>
 #include <mach/iomux-mx35.h>
@@ -76,7 +76,6 @@ static struct fb_videomode imxfb_mode = {
 	.vsync_len	= 3,
 	.sync		= 0,
 	.vmode		= FB_VMODE_NONINTERLACED,
-	.flag		= 0,
 };
 
 static void eukrea_cpuimx35_enable_display(int enable)
@@ -217,7 +216,6 @@ static int eukrea_cpuimx35_devices_init(void)
 	add_generic_device("fsl-udc", DEVICE_ID_DYNAMIC, NULL, MX35_USB_OTG_BASE_ADDR, 0x200,
 			   IORESOURCE_MEM, &usb_pdata);
 #endif
-	armlinux_set_bootparams((void *)0x80000100);
 	armlinux_set_architecture(MACH_TYPE_EUKREA_CPUIMX35SD);
 
 	return 0;
@@ -227,6 +225,9 @@ device_initcall(eukrea_cpuimx35_devices_init);
 
 static int eukrea_cpuimx35_console_init(void)
 {
+	barebox_set_model("Eukrea CPUIMX35");
+	barebox_set_hostname("eukrea-cpuimx35");
+
 	imx35_add_uart0();
 	return 0;
 }
@@ -346,18 +347,14 @@ static int do_cpufreq(int argc, char *argv[])
 		return COMMAND_ERROR_USAGE;
 	}
 
-	printf("Switched CPU frequency to %ldMHz\n", freq);
+	printf("Switched CPU frequency to %luMHz\n", freq);
 
 	return 0;
 }
 
-static const __maybe_unused char cmd_cpufreq_help[] =
-"Usage: cpufreq 399|532\n"
-"\n"
-"Set CPU frequency to <freq> MHz\n";
-
 BAREBOX_CMD_START(cpufreq)
 	.cmd            = do_cpufreq,
-	.usage          = "adjust CPU frequency",
-	BAREBOX_CMD_HELP(cmd_cpufreq_help)
+	BAREBOX_CMD_DESC("adjust CPU frequency")
+	BAREBOX_CMD_OPTS("399|532")
+	BAREBOX_CMD_GROUP(CMD_GRP_HWMANIP)
 BAREBOX_CMD_END

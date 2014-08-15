@@ -17,16 +17,9 @@
 #include <common.h>
 #include <init.h>
 #include <io.h>
-#include <ns16550.h>
-#include <linux/clk.h>
-#include <linux/clkdev.h>
 #include <asm/memory.h>
+#include <linux/mbus.h>
 #include <mach/armada-370-xp-regs.h>
-
-#define CONSOLE_UART_BASE	\
-	ARMADA_370_XP_UARTn_BASE(CONFIG_MVEBU_CONSOLE_UART)
-
-static struct clk *tclk;
 
 static inline void armada_370_xp_memory_find(unsigned long *phys_base,
 					     unsigned long *phys_size)
@@ -51,65 +44,27 @@ static inline void armada_370_xp_memory_find(unsigned long *phys_base,
 	}
 }
 
-static struct NS16550_plat uart_plat = {
-	.shift = 2,
-};
-
-static int armada_370_xp_add_uart(void)
-{
-	uart_plat.clock = clk_get_rate(tclk);
-	if (!add_ns16550_device(DEVICE_ID_DYNAMIC,
-				(unsigned int)CONSOLE_UART_BASE, 32,
-				IORESOURCE_MEM_32BIT, &uart_plat))
-	    return -ENODEV;
-	return 0;
-}
-
-#if defined(CONFIG_ARCH_ARMADA_370)
-static int armada_370_init_clocks(void)
-{
-	u32 val = readl(ARMADA_370_XP_SAR_BASE + SAR_LOW);
-	unsigned int rate;
-
-	/*
-	 * On Armada 370, the TCLK frequency can be either
-	 * 166 Mhz or 200 Mhz
-	 */
-	if ((val & SAR_TCLK_FREQ) == SAR_TCLK_FREQ)
-		rate = 200000000;
-	else
-		rate = 166000000;
-
-	tclk = clk_fixed("tclk", rate);
-	return clk_register_clkdev(tclk, NULL, "mvebu-timer");
-}
-#define armada_370_xp_init_clocks()	armada_370_init_clocks()
-#endif
-
-#if defined(CONFIG_ARCH_ARMADA_XP)
-static int armada_xp_init_clocks(void)
-{
-	/* On Armada XP, the TCLK frequency is always 250 Mhz */
-	tclk = clk_fixed("tclk", 250000000);
-	return clk_register_clkdev(tclk, NULL, "mvebu-timer");
-}
-#define armada_370_xp_init_clocks()	armada_xp_init_clocks()
-#endif
-
 static int armada_370_xp_init_soc(void)
 {
 	unsigned long phys_base, phys_size;
+	u32 reg;
 
-	armada_370_xp_init_clocks();
-	add_generic_device("mvebu-timer", DEVICE_ID_SINGLE, NULL,
-			   (unsigned int)ARMADA_370_XP_TIMER_BASE, 0x30,
-			   IORESOURCE_MEM, NULL);
+	barebox_set_model("Marvell Armada 370/XP");
+	barebox_set_hostname("armada");
+
+	/* Disable MBUS error propagation */
+	reg = readl(ARMADA_370_XP_FABRIC_BASE);
+	reg &= ~BIT(8);
+	writel(reg, ARMADA_370_XP_FABRIC_BASE);
+
 	armada_370_xp_memory_find(&phys_base, &phys_size);
-	arm_add_mem_device("ram0", phys_base, phys_size);
-	armada_370_xp_add_uart();
+
+	mvebu_set_memory(phys_base, phys_size);
+	mvebu_mbus_add_range(0xf0, 0x01, MVEBU_REMAP_INT_REG_BASE);
+
 	return 0;
 }
-postcore_initcall(armada_370_xp_init_soc);
+core_initcall(armada_370_xp_init_soc);
 
 void __noreturn reset_cpu(unsigned long addr)
 {

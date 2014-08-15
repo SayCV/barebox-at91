@@ -22,91 +22,76 @@
  */
 
 #include <common.h>
-#include <console.h>
 #include <init.h>
 #include <driver.h>
 #include <envfs.h>
+#include <environment.h>
+#include <globalvar.h>
 #include <sizes.h>
-#include <io.h>
-#include <ns16550.h>
 #include <net.h>
+#include <envfs.h>
+#include <bootsource.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
 #include <mach/am33xx-silicon.h>
-#include <mach/am33xx-clock.h>
-#include <mach/sdrc.h>
 #include <mach/sys_info.h>
 #include <mach/syslib.h>
 #include <mach/gpmc.h>
-#include <mach/ehci.h>
-#include <i2c/i2c.h>
 #include <linux/err.h>
-#include <linux/phy.h>
-#include <usb/ehci.h>
-#include <mach/am33xx-devices.h>
-#include <mach/am33xx-mux.h>
-#include <mach/wdt.h>
-#include <mach/am33xx-generic.h>
-#include <mach/cpsw.h>
 
-#ifdef CONFIG_DRIVER_SERIAL_NS16550
+#include "beaglebone.h"
 
-/**
- * @brief UART serial port initialization - remember to enable COM clocks in
- * arch
- *
- * @return result of device registration
- */
-static int beaglebone_console_init(void)
+static int beaglebone_coredevice_init(void)
 {
-	am33xx_add_uart0();
+	if (!of_machine_is_compatible("ti,am335x-bone"))
+		return 0;
 
+	am33xx_register_ethaddr(0, 0);
 	return 0;
 }
-console_initcall(beaglebone_console_init);
-#endif /* CONFIG_DRIVER_SERIAL_NS16550 */
+coredevice_initcall(beaglebone_coredevice_init);
 
 static int beaglebone_mem_init(void)
 {
-	omap_add_ram0(SZ_256M);
+	uint32_t sdram_size;
 
+	if (!of_machine_is_compatible("ti,am335x-bone"))
+		return 0;
+
+	if (is_beaglebone_black())
+		sdram_size = SZ_512M;
+	else
+		sdram_size = SZ_256M;
+
+	arm_add_mem_device("ram0", 0x80000000, sdram_size);
 	return 0;
 }
 mem_initcall(beaglebone_mem_init);
 
-static struct cpsw_slave_data cpsw_slaves[] = {
-	{
-		.phy_id		= 0,
-		.phy_if		= PHY_INTERFACE_MODE_MII,
-	},
-};
-
-static struct cpsw_platform_data cpsw_data = {
-	.slave_data		= cpsw_slaves,
-	.num_slaves		= ARRAY_SIZE(cpsw_slaves),
-};
-
-static void beaglebone_eth_init(void)
-{
-	am33xx_register_ethaddr(0, 0);
-
-	writel(0, AM33XX_MAC_MII_SEL);
-
-	am33xx_enable_mii1_pin_mux();
-
-	am33xx_add_cpsw(&cpsw_data);
-}
-
 static int beaglebone_devices_init(void)
 {
-	am33xx_add_mmc0(NULL);
+	int black;
 
-	am33xx_enable_i2c0_pin_mux();
-	beaglebone_eth_init();
+	if (!of_machine_is_compatible("ti,am335x-bone"))
+		return 0;
 
-	armlinux_set_bootparams((void *)0x80000100);
+	if (bootsource_get() == BOOTSOURCE_MMC) {
+		if (bootsource_get_instance() == 0)
+			omap_set_bootmmc_devname("mmc0");
+		else
+			omap_set_bootmmc_devname("mmc1");
+	}
+
+	black = is_beaglebone_black();
+
+	defaultenv_append_directory(defaultenv_beaglebone);
+
+	globalvar_add_simple("board.variant", black ? "boneblack" : "bone");
+
+	printf("detected 'BeagleBone %s'\n", black ? "Black" : "White");
+
 	armlinux_set_architecture(MACH_TYPE_BEAGLEBONE);
 
 	return 0;
 }
-device_initcall(beaglebone_devices_init);
+coredevice_initcall(beaglebone_devices_init);

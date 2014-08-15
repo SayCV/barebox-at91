@@ -1,8 +1,8 @@
-VERSION = 2013
-PATCHLEVEL = 06
+VERSION = 2014
+PATCHLEVEL = 08
 SUBLEVEL = 0
 EXTRAVERSION =
-NAME = Amissive Actinocutious Kiwi
+NAME = None
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -290,7 +290,7 @@ export MODVERDIR := $(if $(KBUILD_EXTMOD),$(firstword $(KBUILD_EXTMOD))/).tmp_ve
 
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
-LINUXINCLUDE    := -Iinclude \
+LINUXINCLUDE    := -Iinclude -I$(srctree)/dts/include \
                    $(if $(KBUILD_SRC),-Iinclude2 -I$(srctree)/include) \
 		   -I$(srctree)/arch/$(ARCH)/include \
 		   -I$(objtree)/arch/$(ARCH)/include \
@@ -481,9 +481,19 @@ export KBUILD_BINARY ?= barebox.bin
 barebox-flash-image: $(KBUILD_IMAGE) FORCE
 	$(call if_changed,ln)
 
+images: barebox.bin FORCE
+	$(Q)$(MAKE) $(build)=images $@
+images/%.s: barebox.bin FORCE
+	$(Q)$(MAKE) $(build)=images $@
+
+ifdef CONFIG_PBL_MULTI_IMAGES
+all: $(KBUILD_DTBS) barebox.bin images
+else
 all: barebox-flash-image $(KBUILD_DTBS)
+endif
 
 common-$(CONFIG_PBL_IMAGE)	+= pbl/
+common-$(CONFIG_DEFAULT_ENVIRONMENT) += defaultenv/
 
 barebox-dirs	:= $(patsubst %/,%,$(filter %/, $(common-y)))
 
@@ -494,6 +504,23 @@ barebox-alldirs	:= $(sort $(barebox-dirs) $(patsubst %/,%,$(filter %/, \
 
 pbl-common-y	:= $(patsubst %/, %/built-in-pbl.o, $(common-y))
 common-y	:= $(patsubst %/, %/built-in.o, $(common-y))
+
+ifeq ($(CONFIG_DEFAULT_COMPRESSION_GZIP),y)
+DEFAULT_COMPRESSION_SUFFIX := .gz
+endif
+ifeq ($(CONFIG_DEFAULT_COMPRESSED_BZIP2),y)
+DEFAULT_COMPRESSION_SUFFIX := .bz2
+endif
+ifeq ($(CONFIG_DEFAULT_COMPRESSION_LZO),y)
+DEFAULT_COMPRESSION_SUFFIX := .lzo
+endif
+ifeq ($(CONFIG_DEFAULT_COMPRESSION_LZ4),y)
+DEFAULT_COMPRESSION_SUFFIX := .lz4
+endif
+ifeq ($(CONFIG_DEFAULT_COMPRESSION_NONE),y)
+DEFAULT_COMPRESSION_SUFFIX :=
+endif
+export DEFAULT_COMPRESSION_SUFFIX
 
 # Build barebox
 # ---------------------------------------------------------------------------
@@ -568,7 +595,7 @@ define rule_barebox__
 	$(cmd_sysmap) $@ System.map;                                         \
 	if [ $$? -ne 0 ]; then                                               \
 		rm -f $@;                                                    \
-		/bin/false;                                                  \
+		false;                                                       \
 	fi;
 endef
 
@@ -605,7 +632,7 @@ define verify_kallsyms
 	$(Q)cmp -s System.map .tmp_System.map ||                             \
 		(echo Inconsistent kallsyms data;                            \
 		 echo Try setting CONFIG_KALLSYMS_EXTRA_PASS;                \
-		 rm .tmp_kallsyms* ; /bin/false )
+		 rm .tmp_kallsyms* ; false )
 endef
 
 # Update barebox version before link
@@ -692,7 +719,7 @@ barebox.uimage: $(KBUILD_BINARY) FORCE
 	$(call if_changed,barebox_mkimage)
 
 ifdef CONFIG_X86
-barebox.S: barebox
+barebox.S barebox.s: barebox
 ifdef CONFIG_X86_HDBOOT
 	@echo "-------------------------------------------------" > barebox.S
 	@echo " * MBR content" >> barebox.S
@@ -714,7 +741,7 @@ endif
 	@echo " * Init Calls content" >> barebox.S
 	$(Q)$(OBJDUMP) -j .barebox_initcalls -d barebox >> barebox.S
 else
-barebox.S: barebox FORCE
+barebox.S barebox.s: barebox FORCE
 	$(call if_changed,disasm)
 endif
 
@@ -747,10 +774,6 @@ include/config/kernel.release: include/config/auto.conf FORCE
 	$(Q)rm -f $@
 	$(Q)echo $(KERNELVERSION)$(localversion) > $@
 
-Doxyfile.version: include/config/auto.conf FORCE
-	$(Q)rm -f $@
-	$(Q)echo "PROJECT_NUMBER = $(KERNELRELEASE)" > $@
-
 # Things we need to do before we recursively start building the kernel
 # or the modules are listed in "prepare".
 # A multi level approach is used. prepareN is processed before prepareN-1.
@@ -773,7 +796,7 @@ ifneq ($(KBUILD_SRC),)
 	$(Q)if [ -f $(srctree)/.config -o -d $(srctree)/include/config ]; then \
 		echo "  $(srctree) is not clean, please run 'make mrproper'";\
 		echo "  in the '$(srctree)' directory.";\
-		/bin/false; \
+		false; \
 	fi;
 	$(Q)if [ ! -d include2 ]; then mkdir -p include2; fi;
 	$(Q)if [ -e $(srctree)/include/asm-$(SRCARCH)/barebox.h ]; then  \
@@ -898,7 +921,7 @@ all: modules
 
 PHONY += modules
 modules: $(barebox-dirs) $(if $(KBUILD_BUILTIN),barebox)
-	@echo '  Building modules, stage 2.';
+	@$(kecho) '  Building modules, stage 2.';
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost
 
 
@@ -969,8 +992,9 @@ CLEAN_FILES +=	barebox System.map include/generated/barebox_default_env.h \
                 .tmp_version .tmp_barebox* barebox.bin barebox.map barebox.S \
 		.tmp_kallsyms* common/barebox_default_env* barebox.ldr \
 		scripts/bareboxenv-target barebox-flash-image \
-		Doxyfile.version barebox.srec barebox.s5p barebox.ubl \
-		barebox.uimage barebox.spi barebox.kwb barebox.kwbuart
+		barebox.srec barebox.s5p barebox.ubl barebox.zynq \
+		barebox.uimage barebox.spi barebox.kwb barebox.kwbuart \
+		barebox.efi barebox.canon-a1100.bin
 
 # Directories & files removed with 'make mrproper'
 MRPROPER_DIRS  += include/config include2 usr/include
@@ -987,6 +1011,7 @@ clean-dirs      := $(addprefix _clean_,$(srctree) $(barebox-alldirs))
 
 PHONY += $(clean-dirs) clean archclean
 $(clean-dirs):
+	$(Q)$(MAKE) $(clean)=images
 	$(Q)$(MAKE) $(clean)=$(patsubst _clean_%,%,$@)
 
 clean: archclean $(clean-dirs)
@@ -995,7 +1020,7 @@ clean: archclean $(clean-dirs)
 	@find . $(RCS_FIND_IGNORE) \
 		\( -name '*.[oas]' -o -name '*.ko' -o -name '.*.cmd' \
 		-o -name '.*.d' -o -name '.*.tmp' -o -name '*.mod.c' \
-		-o -name '*.symtypes' \) \
+		-o -name '*.symtypes' -o -name '*.bbenv.*' -o -name "*.bbenv" \) \
 		-type f -print | xargs rm -f
 
 # mrproper - Delete all generated files, including .config
@@ -1048,8 +1073,7 @@ help:
 	@echo  '                    enough build support to build external modules'
 	@echo  '  mrproper	  - Remove all generated files + config + various backup files'
 	@echo  '  distclean	  - mrproper + remove editor backup and patch files'
-	@echo  '  docs            - start doxygen for all output types (only HTML - FIXME)'
-	@echo  '    htmldocs      - create documentation in HTML format'
+	@echo  '  docs            - build documentation'
 	@echo  ''
 	@echo  'Configuration targets:'
 	@$(MAKE) -f $(srctree)/scripts/kconfig/Makefile help
@@ -1089,16 +1113,6 @@ help:
 	@echo  'Execute "make" or "make all" to build all targets marked with [*] '
 	@echo  'For further info see the ./README file'
 
-# Generate doxygen docs
-# ---------------------------------------------------------------------------
-.PHONY += docs htmldocs
-
-docs : htmldocs
-
-htmldocs: Doxyfile.version
-	@echo  'Running doxygen with local Doxyfile'
-	$(Q)doxygen Doxyfile
-
 # Generate tags for editors
 # ---------------------------------------------------------------------------
 quiet_cmd_tags = GEN     $@
@@ -1107,6 +1121,14 @@ quiet_cmd_tags = GEN     $@
 tags TAGS cscope: FORCE
 	$(call cmd,tags)
 
+SPHINXBUILD   = sphinx-build
+ALLSPHINXOPTS   =  source
+
+docs: FORCE
+	@mkdir -p $(srctree)/Documentation/commands
+	@$(srctree)/Documentation/gen_commands.py $(srctree) $(srctree)/Documentation/commands
+	@$(SPHINXBUILD) -b html -d $(objtree)/doctrees $(srctree)/Documentation \
+		$(objtree)/Documentation/html
 
 endif #ifeq ($(config-targets),1)
 endif #ifeq ($(mixed-targets),1)

@@ -29,6 +29,27 @@
 #include <asm/system.h>
 #include <asm/sections.h>
 #include <asm-generic/memory_layout.h>
+#include <debug_ll.h>
+
+static inline void setup_uart(void)
+{
+	void __iomem *uartbase = (void *)MX25_UART1_BASE_ADDR;
+	void __iomem *iomuxbase = (void *)MX25_IOMUXC_BASE_ADDR;
+
+	writel(0x0, iomuxbase + 0x174);
+
+	writel(0x00000000, uartbase + 0x80);
+	writel(0x00004027, uartbase + 0x84);
+	writel(0x00000704, uartbase + 0x88);
+	writel(0x00000a81, uartbase + 0x90);
+	writel(0x0000002b, uartbase + 0x9c);
+	writel(0x00013880, uartbase + 0xb0);
+	writel(0x0000047f, uartbase + 0xa4);
+	writel(0x0000a259, uartbase + 0xa8);
+	writel(0x00000001, uartbase + 0x80);
+
+	putc_ll('>');
+}
 
 static inline void __bare_init  setup_sdram(uint32_t base, uint32_t esdctl,
 		uint32_t esdcfg)
@@ -54,7 +75,7 @@ static inline void __bare_init  setup_sdram(uint32_t base, uint32_t esdctl,
 	writel(esdctl, esdctlreg);
 }
 
-void __bare_init __naked barebox_arm_reset_vector(void)
+static void __bare_init karo_tx25_common_init(void *fdt)
 {
 	uint32_t r;
 
@@ -113,6 +134,8 @@ void __bare_init __naked barebox_arm_reset_vector(void)
 	writel(0xffffffff, MX25_CCM_BASE_ADDR + MX25_CCM_CGCR1);
 	writel(0x000fdfff, MX25_CCM_BASE_ADDR + MX25_CCM_CGCR2);
 
+	setup_uart();
+
 	/* Skip SDRAM initialization if we run from RAM */
 	r = get_pc();
 	if (r > 0x80000000 && r < 0xa0000000)
@@ -134,12 +157,21 @@ void __bare_init __naked barebox_arm_reset_vector(void)
 	setup_sdram(0x80000000, ESDCTLVAL, ESDCFGVAL);
 	setup_sdram(0x90000000, ESDCTLVAL, ESDCFGVAL);
 
-#ifdef CONFIG_NAND_IMX_BOOT
-	/* setup a stack to be able to call imx25_barebox_boot_nand_external() */
+	imx25_barebox_boot_nand_external(fdt);
+
+out:
+	imx25_barebox_entry(fdt);
+}
+
+extern char __dtb_imx25_karo_tx25_start[];
+
+ENTRY_FUNCTION(start_imx25_karo_tx25, r0, r1, r2)
+{
+	void *fdt;
+
 	arm_setup_stack(MX25_IRAM_BASE_ADDR + MX25_IRAM_SIZE - 8);
 
-	imx25_barebox_boot_nand_external();
-#endif
-out:
-	imx25_barebox_entry(0);
+	fdt = __dtb_imx25_karo_tx25_start - get_runtime_offset();
+
+	karo_tx25_common_init(fdt);
 }

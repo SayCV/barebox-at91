@@ -20,6 +20,7 @@
 #include <malloc.h>
 #include <notifier.h>
 #include <io.h>
+#include <of.h>
 #include <linux/err.h>
 #include <linux/clk.h>
 
@@ -78,7 +79,7 @@
 #define  UCR3_DSR        (1<<10) /* Data set ready */
 #define  UCR3_DCD        (1<<9)  /* Data carrier detect */
 #define  UCR3_RI         (1<<8)  /* Ring indicator */
-#define  UCR3_TIMEOUTEN  (1<<7)  /* Timeout interrupt enable */
+#define  UCR3_ADNIMP     (1<<7)  /* Autobaud Detection Not Improved */
 #define  UCR3_RXDSEN	 (1<<6)  /* Receive status interrupt enable */
 #define  UCR3_AIRINTEN   (1<<5)  /* Async IR wake interrupt enable */
 #define  UCR3_AWAKEN	 (1<<4)  /* Async wake interrupt enable */
@@ -151,7 +152,7 @@ static struct imx_serial_devtype_data imx1_data = {
 
 static struct imx_serial_devtype_data imx21_data = {
 	.ucr1_val = 0,
-	.ucr3_val = 0x700 | UCR3_RXDMUXSEL,
+	.ucr3_val = 0x700 | UCR3_RXDMUXSEL | UCR3_ADNIMP,
 	.ucr4_val = UCR4_CTSTL_32,
 	.uts = 0xb4,
 	.onems = 0xb0,
@@ -312,6 +313,7 @@ static int imx_serial_probe(struct device_d *dev)
 	uint32_t val;
 	struct imx_serial_devtype_data *devtype;
 	int ret;
+	const char *devname;
 
 	ret = dev_get_drvdata(dev, (unsigned long *)&devtype);
 	if (ret)
@@ -330,15 +332,17 @@ static int imx_serial_probe(struct device_d *dev)
 
 	priv->regs = dev_request_mem_region(dev, 0);
 	cdev->dev = dev;
-	cdev->f_caps = CONSOLE_STDIN | CONSOLE_STDOUT | CONSOLE_STDERR;
 	cdev->tstc = imx_serial_tstc;
 	cdev->putc = imx_serial_putc;
 	cdev->getc = imx_serial_getc;
 	cdev->flush = imx_serial_flush;
 	cdev->setbrg = imx_serial_setbaudrate;
+	cdev->linux_console_name = "ttymxc";
+	devname = of_alias_get(dev->device_node);
+	if (devname)
+		cdev->devname = xstrdup(devname);
 
 	imx_serial_init_port(cdev);
-	imx_serial_setbaudrate(cdev, 115200);
 
 	/* Enable UART */
 	val = readl(priv->regs + UCR1);

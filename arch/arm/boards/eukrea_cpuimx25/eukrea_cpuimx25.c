@@ -21,12 +21,12 @@
 #include <common.h>
 #include <init.h>
 #include <driver.h>
+#include <gpio.h>
 #include <environment.h>
 #include <mach/imx25-regs.h>
 #include <asm/armlinux.h>
 #include <asm/barebox-arm.h>
 #include <asm/sections.h>
-#include <mach/gpio.h>
 #include <io.h>
 #include <asm/mmu.h>
 #include <led.h>
@@ -220,7 +220,6 @@ static int eukrea_cpuimx25_devices_init(void)
 			   IORESOURCE_MEM, &usb_pdata);
 #endif
 
-	armlinux_set_bootparams((void *)0x80000100);
 	armlinux_set_architecture(MACH_TYPE_EUKREA_CPUIMX25SD);
 
 	return 0;
@@ -230,6 +229,9 @@ device_initcall(eukrea_cpuimx25_devices_init);
 
 static int eukrea_cpuimx25_console_init(void)
 {
+	barebox_set_model("Eukrea CPUIMX25");
+	barebox_set_hostname("eukrea-cpuimx25");
+
 	imx25_add_uart0();
 	return 0;
 }

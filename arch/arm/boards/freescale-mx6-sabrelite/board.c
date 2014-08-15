@@ -19,7 +19,8 @@
 #include <environment.h>
 #include <mach/imx6-regs.h>
 #include <fec.h>
-#include <mach/gpio.h>
+#include <gpio.h>
+#include <mach/bbu.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
 #include <partition.h>
@@ -33,7 +34,6 @@
 #include <mach/imx6.h>
 #include <mach/devices-imx6.h>
 #include <mach/iomux-mx6.h>
-#include <mach/gpio.h>
 #include <spi/spi.h>
 #include <mach/spi.h>
 #include <mach/usb.h>
@@ -51,6 +51,10 @@ static iomux_v3_cfg_t sabrelite_enet_gpio_pads[] = {
 
 static int sabrelite_mem_init(void)
 {
+	if (!of_machine_is_compatible("fsl,imx6q-sabrelite") &&
+	    !of_machine_is_compatible("fsl,imx6dl-sabrelite"))
+		return 0;
+
 	arm_add_mem_device("ram0", 0x10000000, SZ_1G);
 
 	return 0;
@@ -74,29 +78,65 @@ static int ksz9021rn_phy_fixup(struct phy_device *dev)
 	return 0;
 }
 
+static struct gpio fec_gpios[] = {
+	{
+		.gpio = 87,
+		.flags = GPIOF_OUT_INIT_LOW,
+		.label = "phy-rst",
+	}, {
+		.gpio = 190,
+		.flags = GPIOF_OUT_INIT_HIGH,
+		.label = "phy-addr2",
+	}, {
+		.gpio = 23,
+		.flags = GPIOF_OUT_INIT_LOW,
+		.label = "phy-led-mode",
+	}, {
+		/* MODE strap-in pins: advertise all capabilities */
+		.gpio = 185,
+		.flags = GPIOF_OUT_INIT_HIGH,
+		.label = "phy-adv1",
+	}, {
+		.gpio = 187,
+		.flags = GPIOF_OUT_INIT_HIGH,
+		.label = "phy-adv1",
+	}, {
+		.gpio = 188,
+		.flags = GPIOF_OUT_INIT_HIGH,
+		.label = "phy-adv1",
+	}, {
+		.gpio = 189,
+		.flags = GPIOF_OUT_INIT_HIGH,
+		.label = "phy-adv1",
+	}, {
+		/* Enable 125 MHz clock output */
+		.gpio = 184,
+		.flags = GPIOF_OUT_INIT_HIGH,
+		.label = "phy-125MHz",
+	},
+};
+
 static int sabrelite_ksz9021rn_setup(void)
 {
+	int ret;
+
+	if (!of_machine_is_compatible("fsl,imx6q-sabrelite") &&
+	    !of_machine_is_compatible("fsl,imx6dl-sabrelite"))
+		return 0;
+
 	mxc_iomux_v3_setup_multiple_pads(sabrelite_enet_gpio_pads,
 			ARRAY_SIZE(sabrelite_enet_gpio_pads));
 
-	gpio_direction_output(87, 0);  /* GPIO 3-23 */
-
-	gpio_direction_output(190, 1); /* GPIO 6-30: PHYAD2 */
-
-	/* LED-Mode: Tri-Color Dual LED Mode */
-	gpio_direction_output(23 , 0); /* GPIO 1-23 */
-
-	/* MODE strap-in pins: advertise all capabilities */
-	gpio_direction_output(185, 1); /* GPIO 6-25 */
-	gpio_direction_output(187, 1); /* GPIO 6-27 */
-	gpio_direction_output(188, 1); /* GPIO 6-28*/
-	gpio_direction_output(189, 1); /* GPIO 6-29 */
-
-	/* Enable 125 MHz clock output */
-        gpio_direction_output(184, 1); /* GPIO 6-24 */
+	ret = gpio_request_array(fec_gpios, ARRAY_SIZE(fec_gpios));
+	if (ret) {
+		pr_err("Failed to request fec gpios: %s\n", strerror(-ret));
+		return ret;
+	}
 
 	mdelay(10);
-	gpio_set_value(87, 1);
+
+	/* FEC driver picks up the reset gpio later and releases the phy reset */
+	gpio_free_array(fec_gpios, ARRAY_SIZE(fec_gpios));
 
 	return 0;
 }
@@ -106,48 +146,26 @@ static int sabrelite_ksz9021rn_setup(void)
  */
 fs_initcall(sabrelite_ksz9021rn_setup);
 
-static inline int imx6_iim_register_fec_ethaddr(void)
-{
-	u32 value;
-	u8 buf[6];
-
-	value = readl(MX6_OCOTP_BASE_ADDR + 0x630);
-	buf[0] = (value >> 8);
-	buf[1] = value;
-
-	value = readl(MX6_OCOTP_BASE_ADDR + 0x620);
-	buf[2] = value >> 24;
-	buf[3] = value >> 16;
-	buf[4] = value >> 8;
-	buf[5] = value;
-
-	eth_register_ethaddr(0, buf);
-
-	return 0;
-}
-
 static void sabrelite_ehci_init(void)
 {
-	imx6_usb_phy2_disable_oc();
-	imx6_usb_phy2_enable();
-
 	/* hub reset */
 	gpio_direction_output(204, 0);
 	udelay(2000);
 	gpio_set_value(204, 1);
-
-	add_generic_usb_ehci_device(1, MX6_USBOH3_USB_BASE_ADDR + 0x200, NULL);
 }
 
 static int sabrelite_devices_init(void)
 {
+	if (!of_machine_is_compatible("fsl,imx6q-sabrelite") &&
+	    !of_machine_is_compatible("fsl,imx6dl-sabrelite"))
+		return 0;
+
 	sabrelite_ehci_init();
 
-	armlinux_set_bootparams((void *)0x10000100);
 	armlinux_set_architecture(3769);
 
-	devfs_add_partition("m25p0", 0, SZ_512K, DEVFS_PARTITION_FIXED, "self0");
-	devfs_add_partition("m25p0", SZ_512K, SZ_512K, DEVFS_PARTITION_FIXED, "env0");
+	imx6_bbu_internal_spi_i2c_register_handler("spiflash", "/dev/m25p0.barebox",
+			BBU_HANDLER_FLAG_DEFAULT);
 
 	return 0;
 }
@@ -155,19 +173,15 @@ device_initcall(sabrelite_devices_init);
 
 static int sabrelite_coredevices_init(void)
 {
+	if (!of_machine_is_compatible("fsl,imx6q-sabrelite") &&
+	    !of_machine_is_compatible("fsl,imx6dl-sabrelite"))
+		return 0;
+
 	phy_register_fixup_for_uid(PHY_ID_KSZ9021, MICREL_PHY_ID_MASK,
 					   ksz9021rn_phy_fixup);
 
-	imx6_iim_register_fec_ethaddr();
+	barebox_set_hostname("sabrelite");
 
 	return 0;
 }
 coredevice_initcall(sabrelite_coredevices_init);
-
-static int sabrelite_core_init(void)
-{
-	imx6_init_lowlevel();
-
-	return 0;
-}
-core_initcall(sabrelite_core_init);

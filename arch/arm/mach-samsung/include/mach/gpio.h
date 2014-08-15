@@ -13,18 +13,6 @@
 #ifndef __ASM_MACH_GPIO_H
 #define __ASM_MACH_GPIO_H
 
-#ifdef CONFIG_ARCH_S3C24xx
-# include <mach/iomux-s3c24x0.h>
-#endif
-#ifdef CONFIG_ARCH_S3C64xx
-# include <mach/iomux-s3c64xx.h>
-#endif
-#ifdef CONFIG_ARCH_S5PCxx
-# include <mach/iomux-s5pcxx.h>
-#endif
-
 #include <asm-generic/gpio.h>
-
-void s3c_gpio_mode(unsigned);
 
 #endif /* __ASM_MACH_GPIO_H */

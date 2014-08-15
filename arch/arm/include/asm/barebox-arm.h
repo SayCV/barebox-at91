@@ -43,8 +43,8 @@ uint32_t get_runtime_offset(void);
 void setup_c(void);
 void relocate_to_current_adr(void);
 void relocate_to_adr(unsigned long target);
-void __noreturn barebox_arm_entry(uint32_t membase, uint32_t memsize, uint32_t boarddata);
-unsigned long barebox_arm_boarddata(void);
+void __noreturn barebox_arm_entry(unsigned long membase, unsigned long memsize, void *boarddata);
+void *barebox_arm_boarddata(void);
 
 #if defined(CONFIG_RELOCATABLE) && defined(CONFIG_ARM_EXCEPTIONS)
 void arm_fixup_vectors(void);
@@ -53,6 +53,8 @@ static inline void arm_fixup_vectors(void)
 {
 }
 #endif
+
+void *barebox_arm_boot_dtb(void);
 
 /*
  * For relocatable binaries find a suitable start address for the
@@ -76,5 +78,19 @@ static inline unsigned long arm_barebox_image_place(unsigned long endmem)
 
 	return endmem;
 }
+
+#define ENTRY_FUNCTION(name, arg0, arg1, arg2)				\
+	static void __##name(uint32_t, uint32_t, uint32_t);		\
+									\
+	void __naked __section(.text_head_entry_##name)	name		\
+				(uint32_t r0, uint32_t r1, uint32_t r2)	\
+		{							\
+			__barebox_arm_head();				\
+			__##name(r0, r1, r2);				\
+		}							\
+		static void __naked noinline __##name			\
+			(uint32_t arg0, uint32_t arg1, uint32_t arg2)
+
+
 
 #endif	/* _BAREBOX_ARM_H_ */

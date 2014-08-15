@@ -21,7 +21,6 @@
 #include <generated/mach-types.h>
 #include <mach/imx1-regs.h>
 #include <asm/armlinux.h>
-#include <mach/gpio.h>
 #include <mach/weim.h>
 #include <io.h>
 #include <partition.h>
@@ -78,7 +77,6 @@ static int scb9328_devices_init(void)
 	devfs_add_partition("nor0", 0x40000, 0x20000, DEVFS_PARTITION_FIXED, "env0");
 	protect_file("/dev/env0", 1);
 
-	armlinux_set_bootparams((void *)0x08000100);
 	armlinux_set_architecture(MACH_TYPE_SCB9328);
 
 	return 0;
@@ -91,6 +89,9 @@ static int scb9328_console_init(void)
 	/* init gpios for serial port */
 	imx_gpio_mode(PC11_PF_UART1_TXD);
 	imx_gpio_mode(PC12_PF_UART1_RXD);
+
+	barebox_set_model("Synertronixx scb9328");
+	barebox_set_hostname("scb9328");
 
 	imx1_add_uart0();
 

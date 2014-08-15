@@ -16,11 +16,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
- *
  * with the reference on libata and ahci drvier in kernel
  *
  */
@@ -29,6 +24,7 @@
 #include <init.h>
 #include <errno.h>
 #include <io.h>
+#include <of.h>
 #include <malloc.h>
 #include <scsi.h>
 #include <linux/ctype.h>
@@ -224,13 +220,19 @@ static int ahci_rw(struct ata_port *ata, void *rbuf, const void *wbuf,
 	struct ahci_port *ahci = container_of(ata, struct ahci_port, ata);
 	u8 fis[20];
 	int ret;
+	int lba48 = ata_id_has_lba48(ata->id);
 
 	memset(fis, 0, sizeof(fis));
 
 	/* Construct the FIS */
 	fis[0] = 0x27;			/* Host to device FIS. */
 	fis[1] = 1 << 7;		/* Command FIS. */
-	fis[2] = wbuf ? ATA_CMD_WRITE_EXT : ATA_CMD_READ_EXT;	/* Command byte. */
+
+	/* Command byte. */
+	if (lba48)
+		fis[2] = wbuf ? ATA_CMD_WRITE_EXT : ATA_CMD_READ_EXT;
+	else
+		fis[2] = wbuf ? ATA_CMD_WRITE : ATA_CMD_READ;
 
 	while (num_blocks) {
 		int now;
@@ -240,9 +242,14 @@ static int ahci_rw(struct ata_port *ata, void *rbuf, const void *wbuf,
 		fis[4] = (block >> 0) & 0xff;
 		fis[5] = (block >> 8) & 0xff;
 		fis[6] = (block >> 16) & 0xff;
-		fis[7] = 1 << 6; /* device reg: set LBA mode */
-		fis[8] = ((block >> 24) & 0xff);
-		fis[3] = 0xe0; /* features */
+
+		if (lba48) {
+			fis[7] = 1 << 6; /* device reg: set LBA mode */
+			fis[8] = ((block >> 24) & 0xff);
+			fis[3] = 0xe0; /* features */
+		} else {
+			fis[7] = ((block >> 24) & 0xf) | 0xe0;
+		}
 
 		/* Block (sector) count */
 		fis[12] = (now >> 0) & 0xff;
@@ -364,7 +371,7 @@ static int ahci_init_port(struct ahci_port *ahci_port)
 	ret = wait_on_timeout(WAIT_LINKUP,
 			(ahci_port_read(ahci_port, PORT_SCR_STAT) & 0xf) == 0x3);
 	if (ret) {
-		ahci_port_info(ahci_port, "SATA link timeout\n");;
+		ahci_port_info(ahci_port, "SATA link timeout\n");
 		ret = -ETIMEDOUT;
 		goto err_init;
 	}
@@ -558,6 +565,20 @@ void ahci_info(struct device_d *dev)
 	ahci_print_info(ahci);
 }
 
+static int ahci_detect(struct device_d *dev)
+{
+	struct ahci_device *ahci = dev->priv;
+	int i;
+
+	for (i = 0; i < ahci->n_ports; i++) {
+		struct ahci_port *ahci_port = &ahci->ports[i];
+
+		ata_port_detect(&ahci_port->ata);
+	}
+
+	return 0;
+}
+
 int ahci_add_host(struct ahci_device *ahci)
 {
 	u8 *mmio = (u8 *)ahci->mmio_base;
@@ -618,6 +639,8 @@ int ahci_add_host(struct ahci_device *ahci)
 	tmp = ahci_ioread(ahci, HOST_CTL);
 	ahci_iowrite(ahci, HOST_CTL, tmp | HOST_IRQ_EN);
 	tmp = ahci_ioread(ahci, HOST_CTL);
+
+	ahci->dev->detect = ahci_detect;
 
 	return 0;
 }

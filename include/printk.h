@@ -9,8 +9,11 @@
 #define MSG_NOTICE     5    /* normal but significant condition */
 #define MSG_INFO       6    /* informational */
 #define MSG_DEBUG      7    /* debug-level messages */
+#define MSG_VDEBUG     8    /* verbose debug messages */
 
-#ifdef DEBUG
+#ifdef VERBOSE_DEBUG
+#define LOGLEVEL	MSG_VDEBUG
+#elif defined DEBUG
 #define LOGLEVEL	MSG_DEBUG
 #else
 #define LOGLEVEL	CONFIG_COMPILE_LOGLEVEL
@@ -18,12 +21,15 @@
 
 /* debugging and troubleshooting/diagnostic helpers. */
 
-int dev_printf(const struct device_d *dev, const char *format, ...)
+int pr_print(int level, const char *format, ...)
 	__attribute__ ((format(__printf__, 2, 3)));
+
+int dev_printf(int level, const struct device_d *dev, const char *format, ...)
+	__attribute__ ((format(__printf__, 3, 4)));
 
 #define __dev_printf(level, dev, format, args...) \
 	({	\
-		(level) <= LOGLEVEL ? dev_printf((dev), (format), ##args) : 0; \
+		(level) <= LOGLEVEL ? dev_printf((level), (dev), (format), ##args) : 0; \
 	 })
 
 
@@ -43,10 +49,12 @@ int dev_printf(const struct device_d *dev, const char *format, ...)
 	__dev_printf(6, (dev) , format , ## arg)
 #define dev_dbg(dev, format, arg...)		\
 	__dev_printf(7, (dev) , format , ## arg)
+#define dev_vdbg(dev, format, arg...)		\
+	__dev_printf(8, (dev) , format , ## arg)
 
 #define __pr_printk(level, format, args...) \
 	({	\
-		(level) <= LOGLEVEL ? printk((format), ##args) : 0; \
+		(level) <= LOGLEVEL ? pr_print((level), (format), ##args) : 0; \
 	 })
 
 #ifndef pr_fmt
@@ -56,11 +64,12 @@ int dev_printf(const struct device_d *dev, const char *format, ...)
 #define pr_emerg(fmt, arg...)	__pr_printk(0, pr_fmt(fmt), ##arg)
 #define pr_alert(fmt, arg...)	__pr_printk(1, pr_fmt(fmt), ##arg)
 #define pr_crit(fmt, arg...)	__pr_printk(2, pr_fmt(fmt), ##arg)
-#define pr_warning(fmt, arg...)	__pr_printk(3, pr_fmt(fmt), ##arg)
-#define pr_err(fmt, arg...)	__pr_printk(4, pr_fmt(fmt), ##arg)
+#define pr_err(fmt, arg...)	__pr_printk(3, pr_fmt(fmt), ##arg)
+#define pr_warning(fmt, arg...)	__pr_printk(4, pr_fmt(fmt), ##arg)
 #define pr_notice(fmt, arg...)	__pr_printk(5, pr_fmt(fmt), ##arg)
 #define pr_info(fmt, arg...)	__pr_printk(6, pr_fmt(fmt), ##arg)
 #define pr_debug(fmt, arg...)	__pr_printk(7, pr_fmt(fmt), ##arg)
 #define debug(fmt, arg...)	__pr_printk(7, pr_fmt(fmt), ##arg)
+#define pr_vdebug(fmt, arg...)	__pr_printk(8, pr_fmt(fmt), ##arg)
 
 #endif

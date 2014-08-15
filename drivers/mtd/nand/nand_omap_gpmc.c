@@ -85,9 +85,12 @@
 #define GPMC_ECC_SIZE_CONFIG_ECCSIZE0(x)	((x) << 12)
 #define GPMC_ECC_SIZE_CONFIG_ECCSIZE1(x)	((x) << 22)
 
+#define BCH8_MAX_ERROR	8	/* upto 8 bit correctable */
+#define BCH4_MAX_ERROR	4	/* upto 4 bit correctable */
+
 int omap_gpmc_decode_bch(int select_4_8, unsigned char *ecc, unsigned int *err_loc);
 
-static char *ecc_mode_strings[] = {
+static const char *ecc_mode_strings[] = {
 	"software",
 	"hamming_hw_romcode",
 	"bch4_hw",
@@ -694,7 +697,7 @@ static void omap_write_buf_pref(struct mtd_info *mtd,
  * generate dummy eccs for the unprotected oob area.
  */
 static int omap_gpmc_read_page_bch_rom_mode(struct mtd_info *mtd,
-		struct nand_chip *chip, uint8_t *buf)
+		struct nand_chip *chip, uint8_t *buf, int oob_required, int page)
 {
 	struct gpmc_nand_info *oinfo = chip->priv;
 	int dev_width = chip->options & NAND_BUSWIDTH_16 ? GPMC_ECC_CONFIG_ECC16B : 0;
@@ -785,6 +788,7 @@ static int omap_gpmc_eccmode(struct gpmc_nand_info *oinfo,
 	case OMAP_ECC_HAMMING_CODE_HW_ROMCODE:
 		oinfo->nand.ecc.bytes    = 3;
 		oinfo->nand.ecc.size     = 512;
+		oinfo->nand.ecc.strength = 1;
 		oinfo->ecc_parity_pairs  = 12;
 		if (oinfo->nand.options & NAND_BUSWIDTH_16) {
 			offset = 2;
@@ -800,8 +804,9 @@ static int omap_gpmc_eccmode(struct gpmc_nand_info *oinfo,
 					offset - omap_oobinfo.eccbytes;
 		break;
 	case OMAP_ECC_BCH4_CODE_HW:
-		oinfo->nand.ecc.bytes    = 4 * 7;
-		oinfo->nand.ecc.size     = 4 * 512;
+		oinfo->nand.ecc.bytes    = 7;
+		oinfo->nand.ecc.size     = 512;
+		oinfo->nand.ecc.strength = BCH4_MAX_ERROR;
 		omap_oobinfo.oobfree->offset = offset;
 		omap_oobinfo.oobfree->length = minfo->oobsize -
 					offset - omap_oobinfo.eccbytes;
@@ -810,8 +815,9 @@ static int omap_gpmc_eccmode(struct gpmc_nand_info *oinfo,
 			omap_oobinfo.eccpos[i] = i + offset;
 		break;
 	case OMAP_ECC_BCH8_CODE_HW:
-		oinfo->nand.ecc.bytes    = 4 * 13;
-		oinfo->nand.ecc.size     = 4 * 512;
+		oinfo->nand.ecc.bytes    = 13;
+		oinfo->nand.ecc.size     = 512;
+		oinfo->nand.ecc.strength = BCH8_MAX_ERROR;
 		omap_oobinfo.oobfree->offset = offset;
 		omap_oobinfo.oobfree->length = minfo->oobsize -
 					offset - omap_oobinfo.eccbytes;
@@ -820,23 +826,19 @@ static int omap_gpmc_eccmode(struct gpmc_nand_info *oinfo,
 			omap_oobinfo.eccpos[i] = i + offset;
 		break;
 	case OMAP_ECC_BCH8_CODE_HW_ROMCODE:
-		oinfo->nand.ecc.bytes    = 4 * 13;
-		oinfo->nand.ecc.size     = 4 * 512;
+		oinfo->nand.ecc.bytes    = 13 + 1;
+		oinfo->nand.ecc.size     = 512;
+		oinfo->nand.ecc.strength = BCH8_MAX_ERROR;
 		nand->ecc.read_page = omap_gpmc_read_page_bch_rom_mode;
 		omap_oobinfo.oobfree->length = 0;
 		j = 0;
-		for (i = 2; i < 15; i++)
-			omap_oobinfo.eccpos[j++] = i;
-		for (i = 16; i < 29; i++)
-			omap_oobinfo.eccpos[j++] = i;
-		for (i = 30; i < 43; i++)
-			omap_oobinfo.eccpos[j++] = i;
-		for (i = 44; i < 57; i++)
+		for (i = 2; i < 58; i++)
 			omap_oobinfo.eccpos[j++] = i;
 		break;
 	case OMAP_ECC_SOFT:
 		nand->ecc.layout = NULL;
 		nand->ecc.mode = NAND_ECC_SOFT;
+		oinfo->nand.ecc.strength = 1;
 		break;
 	default:
 		return -EINVAL;
@@ -853,32 +855,14 @@ static int omap_gpmc_eccmode(struct gpmc_nand_info *oinfo,
 	return 0;
 }
 
-static int omap_gpmc_eccmode_set(struct device_d *dev, struct param_d *param, const char *val)
+static int omap_gpmc_eccmode_set(struct param_d *param, void *priv)
 {
-	struct gpmc_nand_info *oinfo = dev->priv;
-	int i;
+	struct gpmc_nand_info *oinfo = priv;
 
-	if (!val)
-		return 0;
-
-	for (i = 0; i < ARRAY_SIZE(ecc_mode_strings); i++)
-		if (!strcmp(ecc_mode_strings[i], val))
-			break;
-
-	if (i == ARRAY_SIZE(ecc_mode_strings)) {
-		dev_err(dev, "invalid ecc mode '%s'\n", val);
-		printf("valid modes:\n");
-		for (i = 0; i < ARRAY_SIZE(ecc_mode_strings); i++)
-			printf("%s\n", ecc_mode_strings[i]);
-		return -EINVAL;
-	}
-
-	dev_param_set_generic(dev, param, ecc_mode_strings[i]);
-
-	return omap_gpmc_eccmode(oinfo, i);
+	return omap_gpmc_eccmode(oinfo, oinfo->ecc_mode);
 }
 
-static int gpmc_set_buswidth(struct mtd_info *mtd, struct nand_chip *chip, int buswidth)
+static int gpmc_set_buswidth(struct nand_chip *chip, int buswidth)
 {
 	struct gpmc_nand_info *oinfo = chip->priv;
 
@@ -950,7 +934,7 @@ static int gpmc_nand_probe(struct device_d *pdev)
 
 	switch (pdata->device_width) {
 	case 0:
-		printk("probe buswidth\n");
+		dev_dbg(pdev, "probing buswidth\n");
 		nand->options |= NAND_BUSWIDTH_AUTO;
 		break;
 	case 8:
@@ -999,8 +983,6 @@ static int gpmc_nand_probe(struct device_d *pdev)
 	nand->options |= NAND_OWN_BUFFERS;
 	nand->buffers = xzalloc(sizeof(*nand->buffers));
 
-	nand->set_buswidth = gpmc_set_buswidth;
-
 	/* State my controller */
 	nand->controller = &oinfo->controller;
 
@@ -1023,10 +1005,12 @@ static int gpmc_nand_probe(struct device_d *pdev)
 	mdelay(1);
 
 	/* first scan to find the device and get the page size */
-	if (nand_scan_ident(minfo, 1)) {
+	if (nand_scan_ident(minfo, 1, NULL)) {
 		err = -ENXIO;
 		goto out_release_mem;
 	}
+
+	gpmc_set_buswidth(nand, nand->options & NAND_BUSWIDTH_16);
 
 	if (nand->options & NAND_BUSWIDTH_16) {
 		lsp = &ecc_sp_x16;
@@ -1049,15 +1033,18 @@ static int gpmc_nand_probe(struct device_d *pdev)
 	}
 
 	nand->read_buf   = omap_read_buf_pref;
-	nand->write_buf  = omap_write_buf_pref;
+	if (IS_ENABLED(CONFIG_MTD_WRITE))
+		nand->write_buf  = omap_write_buf_pref;
 
 	nand->options |= NAND_SKIP_BBTSCAN;
 
-	dev_add_param(pdev, "eccmode", omap_gpmc_eccmode_set, NULL, 0);
-	dev_set_param(pdev, "eccmode", ecc_mode_strings[pdata->ecc_mode]);
+	oinfo->ecc_mode = pdata->ecc_mode;
 
-	if (! IS_ENABLED(CONFIG_PARAMETER))
-		omap_gpmc_eccmode(oinfo, pdata->ecc_mode);
+	dev_add_param_enum(pdev, "eccmode",
+			omap_gpmc_eccmode_set, NULL, (int *)&oinfo->ecc_mode,
+			ecc_mode_strings, ARRAY_SIZE(ecc_mode_strings), oinfo);
+
+	omap_gpmc_eccmode(oinfo, oinfo->ecc_mode);
 
 	/* We are all set to register with the system now! */
 	err = add_mtd_nand_device(minfo, "nand");

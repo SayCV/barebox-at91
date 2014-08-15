@@ -33,7 +33,7 @@
 
 #include <mach/clock.h>
 #include <mach/imx-regs.h>
-#include <mach/iomux-imx28.h>
+#include <mach/iomux.h>
 #include <mach/mci.h>
 
 #include <asm/armlinux.h>
@@ -72,7 +72,7 @@ static const uint32_t cfa10036_pads[] = {
 };
 
 static struct mxs_mci_platform_data mci_pdata = {
-	.caps = MMC_MODE_8BIT,
+	.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
 	.voltages = MMC_VDD_32_33 | MMC_VDD_33_34,	/* fixed to 3.3 V */
 	.f_min = 400 * 1000,
 	.f_max = 25000000,
@@ -116,18 +116,12 @@ mem_initcall(cfa10036_mem_init);
 
 static int cfa10036_devices_init(void)
 {
-	int i, ret;
+	int i;
 
 	/* initizalize muxing */
 	for (i = 0; i < ARRAY_SIZE(cfa10036_pads); i++)
 		imx_gpio_mode(cfa10036_pads[i]);
 
-	/* enable IOCLK0 to run at the PLL frequency */
-	imx_set_ioclk(0, 480000000);
-	/* run the SSP unit clock at 100 MHz */
-	imx_set_sspclk(0, 100000000, 1);
-
-	armlinux_set_bootparams((void *)IMX_MEMORY_BASE + 0x100);
 	armlinux_set_architecture(MACH_TYPE_CFA10036);
 
 	add_generic_device("mxs_mci", 0, NULL, IMX_SSP0_BASE, SZ_8K,
@@ -141,10 +135,7 @@ static int cfa10036_devices_init(void)
 
 	cfa10036_detect_hw();
 
-	ret = envfs_register_partition("disk0", 1);
-	if (ret != 0)
-		printf("Cannot create the 'env0' persistent "
-			 "environment storage (%d)\n", ret);
+	default_environment_path_set("/dev/disk0.1");
 
 	return 0;
 }
@@ -152,6 +143,9 @@ device_initcall(cfa10036_devices_init);
 
 static int cfa10036_console_init(void)
 {
+	barebox_set_model("crystalfontz-cfa10036");
+	barebox_set_hostname("cfa10036");
+
 	add_generic_device("stm_serial", 0, NULL, IMX_DBGUART_BASE, SZ_8K,
 			   IORESOURCE_MEM, NULL);
 

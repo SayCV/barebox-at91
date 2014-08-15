@@ -59,12 +59,19 @@
 #define SYSCLK_50	50000000
 #define SYSCLK_100	100000000
 
-/* Ethernet. Use eTSEC3 */
+/* Define attributes for eTSEC2 and eTSEC3 */
 static struct gfar_info_struct gfar_info[] = {
+	{
+		.phyaddr = 0,
+		.tbiana = 0x1a0,
+		.tbicr = 0x9140,
+		.mdiobus_tbi = 1,
+	},
 	{
 		.phyaddr = 1,
 		.tbiana = 0,
 		.tbicr = 0,
+		.mdiobus_tbi = 2,
 	},
 };
 
@@ -76,17 +83,18 @@ struct i2c_platform_data i2cplat = {
 static int devices_init(void)
 {
 	add_cfi_flash_device(DEVICE_ID_DYNAMIC, CFG_FLASH_BASE, 16 << 20, 0);
-
+	devfs_add_partition("nor0", 0xf60000, 0x8000, DEVFS_PARTITION_FIXED,
+			"env0");
+	devfs_add_partition("nor0", 0xf80000, 0x80000, DEVFS_PARTITION_FIXED,
+			"self0");
 	add_generic_device("i2c-fsl", 0, NULL, I2C1_BASE_ADDR,
 			0x100, IORESOURCE_MEM, &i2cplat);
 	add_generic_device("i2c-fsl", 1, NULL, I2C2_BASE_ADDR,
 			0x100, IORESOURCE_MEM, &i2cplat);
 
-	/* eTSEC3 */
-	fsl_eth_init(3, &gfar_info[0]);
+	fsl_eth_init(2, &gfar_info[0]);
+	fsl_eth_init(3, &gfar_info[1]);
 
-	devfs_add_partition("nor0", 0xf80000, 0x80000, DEVFS_PARTITION_FIXED,
-			    "self0");
 	return 0;
 }
 
@@ -99,9 +107,13 @@ static struct NS16550_plat serial_plat = {
 
 static int p2020_console_init(void)
 {
+	barebox_set_model("Freescale P2020RDB");
+	barebox_set_hostname("p2020rdb");
+
 	serial_plat.clock = fsl_get_bus_freq(0);
 
-	add_ns16550_device(DEVICE_ID_DYNAMIC, 0xffe04500, 16, IORESOURCE_MEM_8BIT,
+	add_ns16550_device(DEVICE_ID_DYNAMIC, 0xffe04500, 16,
+			   IORESOURCE_MEM | IORESOURCE_MEM_8BIT,
 			   &serial_plat);
 	return 0;
 }
@@ -227,6 +239,10 @@ static int board_init_r(void)
 	const u8 flash_esel = e500_find_tlb_idx((void *)flashbase, 1);
 
 	checkboard();
+
+	/* Map the whole boot flash */
+	fsl_set_lbc_br(0, BR_PHYS_ADDR(CFG_FLASH_BASE_PHYS) | BR_PS_16 | BR_V);
+	fsl_set_lbc_or(0, 0xff000ff7);
 
 	/* Flush d-cache and invalidate i-cache of any FLASH data */
 	flush_dcache();

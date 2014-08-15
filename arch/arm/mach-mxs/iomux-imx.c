@@ -18,6 +18,8 @@
 #include <gpio.h>
 #include <errno.h>
 #include <io.h>
+#include <mach/iomux.h>
+#include <stmp-device.h>
 #include <mach/imx-regs.h>
 
 #define HW_PINCTRL_CTRL 0x000
@@ -97,7 +99,7 @@ void imx_gpio_mode(uint32_t m)
 
 	/* some pins are disabled when configured for GPIO */
 	if ((gpio_pin > MAX_GPIO_NO) && (GET_FUNC(m) == IS_GPIO)) {
-		printf("Cannot configure pad %d to GPIO\n", gpio_pin);
+		printf("Cannot configure pad %u to GPIO\n", gpio_pin);
 		return;
 	}
 
@@ -112,22 +114,24 @@ void imx_gpio_mode(uint32_t m)
 		reg_offset = calc_strength_reg(gpio_pin);
 		if (GET_VOLTAGE(m) == 1)
 			writel(0x1 << (((gpio_pin % 8) << 2) + 2),
-				IMX_IOMUXC_BASE + reg_offset + BIT_SET);
+				IMX_IOMUXC_BASE + reg_offset + STMP_OFFSET_REG_SET);
 		else
 			writel(0x1 << (((gpio_pin % 8) << 2) + 2),
-				IMX_IOMUXC_BASE + reg_offset + BIT_CLR);
+				IMX_IOMUXC_BASE + reg_offset + STMP_OFFSET_REG_CLR);
 	}
 
 	if (PE_PRESENT(m)) {
 		reg_offset = calc_pullup_reg(gpio_pin);
 		writel(0x1 << (gpio_pin % 32), IMX_IOMUXC_BASE + reg_offset +
-				(GET_PULLUP(m) == 1 ? BIT_SET : BIT_CLR));
+				(GET_PULLUP(m) == 1 ?
+				 STMP_OFFSET_REG_SET : STMP_OFFSET_REG_CLR));
 	}
 
 	if (BK_PRESENT(m)) {
 		reg_offset = calc_pullup_reg(gpio_pin);
 		writel(0x1 << (gpio_pin % 32), IMX_IOMUXC_BASE + reg_offset +
-				(GET_BITKEEPER(m) == 1 ? BIT_CLR : BIT_SET));
+				(GET_BITKEEPER(m) == 1 ?
+				 STMP_OFFSET_REG_CLR : STMP_OFFSET_REG_SET));
 	}
 
 	if (GET_FUNC(m) == IS_GPIO) {
@@ -135,16 +139,17 @@ void imx_gpio_mode(uint32_t m)
 			/* first set the output value */
 			reg_offset = calc_output_reg(gpio_pin);
 			writel(0x1 << (gpio_pin % 32), IMX_IOMUXC_BASE +
-				reg_offset + (GET_GPIOVAL(m) == 1 ? BIT_SET : BIT_CLR));
+				reg_offset + (GET_GPIOVAL(m) == 1 ?
+					STMP_OFFSET_REG_SET : STMP_OFFSET_REG_CLR));
 			/* then the direction */
 			reg_offset = calc_output_enable_reg(gpio_pin);
 			writel(0x1 << (gpio_pin % 32),
-				IMX_IOMUXC_BASE + reg_offset + BIT_SET);
+				IMX_IOMUXC_BASE + reg_offset + STMP_OFFSET_REG_SET);
 		} else {
 			/* then the direction */
 			reg_offset = calc_output_enable_reg(gpio_pin);
 			writel(0x1 << (gpio_pin % 32),
-				IMX_IOMUXC_BASE + reg_offset + BIT_CLR);
+				IMX_IOMUXC_BASE + reg_offset + STMP_OFFSET_REG_CLR);
 		}
 	}
 }
@@ -157,7 +162,7 @@ int gpio_direction_input(unsigned gpio)
 		return -EINVAL;
 
 	reg_offset = calc_output_enable_reg(gpio);
-	writel(0x1 << (gpio % 32), IMX_IOMUXC_BASE + reg_offset + BIT_CLR);
+	writel(0x1 << (gpio % 32), IMX_IOMUXC_BASE + reg_offset + STMP_OFFSET_REG_CLR);
 
 	return 0;
 }
@@ -172,10 +177,10 @@ int gpio_direction_output(unsigned gpio, int val)
 	/* first set the output value... */
 	reg_offset = calc_output_reg(gpio);
 	writel(0x1 << (gpio % 32), IMX_IOMUXC_BASE +
-		reg_offset + (val != 0 ? BIT_SET : BIT_CLR));
+		reg_offset + (val != 0 ? STMP_OFFSET_REG_SET : STMP_OFFSET_REG_CLR));
 	/* ...then the direction */
 	reg_offset = calc_output_enable_reg(gpio);
-	writel(0x1 << (gpio % 32), IMX_IOMUXC_BASE + reg_offset + BIT_SET);
+	writel(0x1 << (gpio % 32), IMX_IOMUXC_BASE + reg_offset + STMP_OFFSET_REG_SET);
 
 	return 0;
 }
@@ -186,7 +191,8 @@ void gpio_set_value(unsigned gpio, int val)
 
 	reg_offset = calc_output_reg(gpio);
 	writel(0x1 << (gpio % 32), IMX_IOMUXC_BASE +
-				reg_offset + (val != 0 ? BIT_SET : BIT_CLR));
+				reg_offset + (val != 0 ?
+					STMP_OFFSET_REG_SET : STMP_OFFSET_REG_CLR));
 }
 
 int gpio_get_value(unsigned gpio)

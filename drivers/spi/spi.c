@@ -100,29 +100,35 @@ fail:
 }
 EXPORT_SYMBOL(spi_new_device);
 
-#ifdef CONFIG_OFDEVICE
-void spi_of_register_slaves(struct spi_master *master, struct device_node *node)
+static void spi_of_register_slaves(struct spi_master *master)
 {
 	struct device_node *n;
 	struct spi_board_info chip;
 	struct property *reg;
+	struct device_node *node = master->dev->device_node;
 
-	device_node_for_nach_child(node, n) {
+	if (!IS_ENABLED(CONFIG_OFDEVICE))
+		return;
+
+	if (!node)
+		return;
+
+	for_each_child_of_node(node, n) {
 		memset(&chip, 0, sizeof(chip));
 		chip.name = xstrdup(n->name);
 		chip.bus_num = master->bus_num;
 		/* Mode (clock phase/polarity/etc.) */
-		if (of_find_property(n, "spi-cpha"))
+		if (of_find_property(n, "spi-cpha", NULL))
 			chip.mode |= SPI_CPHA;
-		if (of_find_property(n, "spi-cpol"))
+		if (of_find_property(n, "spi-cpol", NULL))
 			chip.mode |= SPI_CPOL;
-		if (of_find_property(n, "spi-cs-high"))
+		if (of_find_property(n, "spi-cs-high", NULL))
 			chip.mode |= SPI_CS_HIGH;
-		if (of_find_property(n, "spi-3wire"))
+		if (of_find_property(n, "spi-3wire", NULL))
 			chip.mode |= SPI_3WIRE;
 		of_property_read_u32(n, "spi-max-frequency",
 				&chip.max_speed_hz);
-		reg = of_find_property(n, "reg");
+		reg = of_find_property(n, "reg", NULL);
 		if (!reg)
 			continue;
 		chip.chip_select = of_read_number(reg->value, 1);
@@ -130,7 +136,6 @@ void spi_of_register_slaves(struct spi_master *master, struct device_node *node)
 		spi_register_board_info(&chip, 1);
 	}
 }
-#endif
 
 /**
  * spi_register_board_info - register SPI devices for a given board
@@ -210,6 +215,7 @@ static LIST_HEAD(spi_master_list);
  */
 int spi_register_master(struct spi_master *master)
 {
+	static int dyn_bus_id = (1 << 15) - 1;
 	int			status = -ENODEV;
 
 	debug("%s: %s:%d\n", __func__, master->dev->name, master->dev->id);
@@ -220,7 +226,16 @@ int spi_register_master(struct spi_master *master)
 	if (master->num_chipselect == 0)
 		return -EINVAL;
 
+	if ((master->bus_num < 0) && master->dev->device_node)
+		master->bus_num = of_alias_get_id(master->dev->device_node, "spi");
+
+	/* convention:  dynamically assigned bus IDs count down from the max */
+	if (master->bus_num < 0)
+		master->bus_num = dyn_bus_id--;
+
 	list_add_tail(&master->list, &spi_master_list);
+
+	spi_of_register_slaves(master);
 
 	/* populate children from any spi device tables */
 	scan_boardinfo(master);
@@ -289,15 +304,6 @@ int spi_write_then_read(struct spi_device *spi,
 }
 EXPORT_SYMBOL(spi_write_then_read);
 
-static int spi_match(struct device_d *dev, struct driver_d *drv)
-{
-	if (IS_ENABLED(CONFIG_OFDEVICE) && dev->device_node &&
-			drv->of_compatible)
-		return of_match(dev, drv);
-
-	return strcmp(dev->name, drv->name) ? -1 : 0;
-}
-
 static int spi_probe(struct device_d *dev)
 {
 	return dev->driver->probe(dev);
@@ -310,7 +316,7 @@ static void spi_remove(struct device_d *dev)
 
 struct bus_type spi_bus = {
 	.name = "spi",
-	.match = spi_match,
+	.match = device_match_of_modalias,
 	.probe = spi_probe,
 	.remove = spi_remove,
 };

@@ -127,7 +127,7 @@ static void dns_handler(void *ctx, char *packet, unsigned len)
 	debug("%s\n", __func__);
 
 	/* We sent 1 query. We want to see more that 1 answer. */
-	header = (struct header *)net_eth_to_udp_payload(packet);;
+	header = (struct header *)net_eth_to_udp_payload(packet);
 	if (ntohs(header->nqueries) != 1)
 		return;
 
@@ -241,6 +241,7 @@ IPaddr_t resolv(char *host)
 	return dns_ip;
 }
 
+#ifdef CONFIG_CMD_HOST
 static int do_host(int argc, char *argv[])
 {
 	IPaddr_t ip;
@@ -260,12 +261,10 @@ static int do_host(int argc, char *argv[])
 	return 0;
 }
 
-static const __maybe_unused char cmd_host_help[] =
-"Usage: host <hostname>\n";
-
 BAREBOX_CMD_START(host)
 	.cmd		= do_host,
-	.usage		= "resolve a hostname",
-	BAREBOX_CMD_HELP(cmd_host_help)
+	BAREBOX_CMD_DESC("resolve a hostname")
+	BAREBOX_CMD_OPTS("HOSTNAME")
+	BAREBOX_CMD_GROUP(CMD_GRP_NET)
 BAREBOX_CMD_END
-
+#endif

@@ -18,10 +18,6 @@
  *
  */
 
-#ifdef CONFIG_ENABLE_DEVICE_NOISE
-# define DEBUG
-#endif
-
 #include <common.h>
 
 #include <command.h>
@@ -482,7 +478,7 @@ static int smc911x_eth_rx(struct eth_device *edev)
 			dev_err(&edev->dev, "dropped bad packet. Status: 0x%08x\n",
 				status);
 		else
-			net_receive(NetRxPackets[0], pktlen);
+			net_receive(edev, NetRxPackets[0], pktlen);
 	}
 
 	return 0;

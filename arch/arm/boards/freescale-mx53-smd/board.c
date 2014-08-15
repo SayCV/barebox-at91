@@ -24,6 +24,7 @@
 #include <net.h>
 #include <partition.h>
 #include <sizes.h>
+#include <gpio.h>
 
 #include <generated/mach-types.h>
 
@@ -31,7 +32,6 @@
 #include <mach/iomux-mx53.h>
 #include <mach/devices-imx53.h>
 #include <mach/generic.h>
-#include <mach/gpio.h>
 #include <mach/imx-nand.h>
 #include <mach/iim.h>
 #include <mach/imx5.h>
@@ -131,7 +131,6 @@ static int smd_devices_init(void)
 
 	smd_fec_reset();
 
-	armlinux_set_bootparams((void *)0x70000100);
 	armlinux_set_architecture(MACH_TYPE_MX53_SMD);
 
 	return 0;
@@ -150,6 +149,9 @@ late_initcall(smd_part_init);
 static int smd_console_init(void)
 {
 	mxc_iomux_v3_setup_multiple_pads(smd_pads, ARRAY_SIZE(smd_pads));
+
+	barebox_set_model("Freescale i.MX53 SMD");
+	barebox_set_hostname("imx53-smd");
 
 	imx53_init_lowlevel(1000);
 

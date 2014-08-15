@@ -72,10 +72,11 @@
 #ifndef WARN
 #define WARN(condition, format...) ({					\
 	int __ret_warn_on = !!(condition);				\
-	if (unlikely(__ret_warn_on))					\
+	if (unlikely(__ret_warn_on)) {					\
 		__WARN();						\
 		puts("WARNING: ");					\
 		printf(format);						\
+	}								\
 	unlikely(__ret_warn_on);					\
 })
 #endif
@@ -92,8 +93,7 @@ void __noreturn panic(const char *fmt, ...);
 
 char *size_human_readable(unsigned long long size);
 
-/* common/main.c */
-int	run_command	(const char *cmd, int flag);
+int run_command(const char *cmd);
 int	readline	(const char *prompt, char *buf, int len);
 
 /* common/memsize.c */
@@ -115,6 +115,8 @@ long	simple_strtol(const char *cp,char **endp,unsigned int base);
 /* lib_generic/crc32.c */
 uint32_t crc32(uint32_t, const void*, unsigned int);
 uint32_t crc32_no_comp(uint32_t, const void*, unsigned int);
+int file_crc(char *filename, ulong start, ulong size, ulong *crc,
+		    ulong *total);
 
 /* common/console.c */
 int	ctrlc (void);
@@ -152,6 +154,7 @@ extern int (*barebox_main)(void);
 
 void __noreturn start_barebox(void);
 void shutdown_barebox(void);
+extern void (*board_shutdown)(void);
 
 /*
  * architectures which have special calling conventions for
@@ -162,6 +165,15 @@ extern void (*do_execute)(void *func, int argc, char *argv[]);
 void arch_shutdown(void);
 
 int run_shell(void);
+
+#ifdef CONFIG_SHELL_HUSH
+char *shell_expand(char *str);
+#else
+static inline char *shell_expand(char *str)
+{
+	return strdup(str);
+}
+#endif
 
 /* Force a compilation error if condition is true */
 #define BUILD_BUG_ON(condition) ((void)BUILD_BUG_ON_ZERO(condition))
@@ -182,13 +194,25 @@ int run_shell(void);
 #define BUILD_BUG_ON_ZERO(e) (sizeof(struct { int:-!!(e); }))
 #define BUILD_BUG_ON_NULL(e) ((void *)sizeof(struct { int:-!!(e); }))
 
-#define ALIGN(x,a)		__ALIGN_MASK(x,(typeof(x))(a)-1)
-#define __ALIGN_MASK(x,mask)	(((x)+(mask))&~(mask))
+#define ALIGN(x, a)		__ALIGN_MASK(x, (typeof(x))(a) - 1)
+#define __ALIGN_MASK(x, mask)	(((x) + (mask)) & ~(mask))
+#define ALIGN_DOWN(x, a)	((x) & ~((typeof(x))(a) - 1))
 #define PTR_ALIGN(p, a)		((typeof(p))ALIGN((unsigned long)(p), (a)))
 #define IS_ALIGNED(x, a)		(((x) & ((typeof(x))(a) - 1)) == 0)
 
 #define ARRAY_SIZE(arr)		(sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
 #define ARRAY_AND_SIZE(x)	(x), ARRAY_SIZE(x)
+
+/*
+ * The STACK_ALIGN_ARRAY macro is used to allocate a buffer on the stack that
+ * meets a minimum alignment requirement.
+ *
+ * Note that the size parameter is the number of array elements to allocate,
+ * not the number of bytes.
+ */
+#define STACK_ALIGN_ARRAY(type, name, size, align)		\
+	char __##name[sizeof(type) * (size) + (align) - 1];	\
+	type *name = (type *)ALIGN((uintptr_t)__##name, align)
 
 /**
  * container_of - cast a member of a structure out to the containing structure
@@ -219,7 +243,15 @@ int run_shell(void);
 #define PAGE_ALIGN(s) (((s) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
 #define PAGE_ALIGN_DOWN(x) ((x) & ~(PAGE_SIZE - 1))
 
-int memory_display(char *addr, loff_t offs, unsigned nbytes, int size, int swab);
+int memory_display(const void *addr, loff_t offs, unsigned nbytes, int size, int swab);
+
+#define DUMP_PREFIX_OFFSET 0
+static inline void print_hex_dump(const char *level, const char *prefix_str,
+		int prefix_type, int rowsize, int groupsize,
+		const void *buf, size_t len, bool ascii)
+{
+	memory_display(buf, 0, len, 4, 0);
+}
 
 int mem_parse_options(int argc, char *argv[], char *optstr, int *mode,
 		char **sourcefile, char **destfile, int *swab);
@@ -227,11 +259,17 @@ int open_and_lseek(const char *filename, int mode, loff_t pos);
 #define RW_BUF_SIZE	(unsigned)4096
 
 extern const char version_string[];
+extern const char release_string[];
 #ifdef CONFIG_BANNER
 void barebox_banner(void);
 #else
 static inline void barebox_banner(void) {}
 #endif
+
+const char *barebox_get_model(void);
+void barebox_set_model(const char *);
+const char *barebox_get_hostname(void);
+void barebox_set_hostname(const char *);
 
 #define IOMEM(addr)	((void __force __iomem *)(addr))
 
@@ -243,6 +281,22 @@ static inline void barebox_banner(void) {}
 	(((x) + ((__divisor) / 2)) / (__divisor));	\
 }							\
 )
+
+/**
+ * upper_32_bits - return bits 32-63 of a number
+ * @n: the number we're accessing
+ *
+ * A basic shift-right of a 64- or 32-bit quantity.  Use this to suppress
+ * the "right shift count >= width of type" warning when that quantity is
+ * 32-bits.
+ */
+#define upper_32_bits(n)	((u32)(((n) >> 16) >> 16))
+
+/**
+ * lower_32_bits - return bits 0-31 of a number
+ * @n: the number we're accessing
+ */
+#define lower_32_bits(n)	((u32)(n))
 
 #define abs(x) ({                               \
 		long __x = (x);                 \

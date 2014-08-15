@@ -41,6 +41,26 @@ void __iomem *syscon_base_lookup_by_pdevname(const char *s)
 	return ERR_PTR(-ENODEV);
 }
 
+void __iomem *syscon_base_lookup_by_phandle(struct device_node *np,
+					    const char *property)
+{
+	struct device_node *node;
+	struct syscon *syscon;
+	struct device_d *dev;
+
+	node = of_parse_phandle(np, property, 0);
+	if (!node)
+		return ERR_PTR(-ENODEV);
+
+	dev = of_find_device_by_node(node);
+	if (!dev)
+		return ERR_PTR(-ENODEV);
+
+	syscon = dev->priv;
+
+	return syscon->base;
+}
+
 static int syscon_probe(struct device_d *dev)
 {
 	struct syscon *syscon;
@@ -50,7 +70,7 @@ static int syscon_probe(struct device_d *dev)
 	if (!syscon)
 		return -ENOMEM;
 
-	res = dev_get_resource(dev, 0);
+	res = dev_get_resource(dev, IORESOURCE_MEM, 0);
 	if (!res) {
 		free(syscon);
 		return -ENOENT;
@@ -65,16 +85,13 @@ static int syscon_probe(struct device_d *dev)
 	syscon->base = (void __iomem *)res->start;
 	dev->priv = syscon;
 
-	dev_info(dev, "map 0x%x-0x%x registered\n", res->start, res->end);
+	dev_dbg(dev, "map 0x%x-0x%x registered\n", res->start, res->end);
 
 	return 0;
 }
 
 static struct platform_device_id syscon_ids[] = {
 	{ "syscon", },
-#ifdef CONFIG_ARCH_CLPS711X
-	{ "clps711x-syscon", },
-#endif
 	{ }
 };
 

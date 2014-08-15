@@ -59,11 +59,15 @@ struct gpmc_nand_platform_data {
 	struct nand_ecclayout *oob;
 	/** gpmc config for nand */
 	struct gpmc_config *nand_cfg;
+
+	struct device_node *of_node;
+	struct device_node *elm_of_node;
 };
 
 int omap_add_gpmc_nand_device(struct gpmc_nand_platform_data *pdata);
 
 extern struct gpmc_config omap3_nand_cfg;
 extern struct gpmc_config omap4_nand_cfg;
+extern struct gpmc_config am33xx_nand_cfg;
 
 #endif				/* __ASM_OMAP_NAND_GPMC_H */

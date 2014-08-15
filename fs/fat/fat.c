@@ -167,7 +167,7 @@ static int fat_write(struct device_d *_dev, FILE *f, const void *buf, size_t ins
 
 	ret = f_write(f_file, buf, insize, &outsize);
 
-	debug("%s: %d %d %d %p\n", __func__, ret, insize, outsize, f_file);
+	debug("%s: %d %zd %d %p\n", __func__, ret, insize, outsize, f_file);
 
 	if (ret)
 		return ret;
@@ -260,7 +260,7 @@ static int fat_read(struct device_d *_dev, FILE *f, void *buf, size_t insize)
 
 	ret = f_read(f_file, buf, insize, &outsize);
 
-	debug("%s: %d %d %d %p\n", __func__, ret, insize, outsize, f_file);
+	debug("%s: %d %zd %d %p\n", __func__, ret, insize, outsize, f_file);
 
 	if (ret)
 		return ret;
@@ -277,6 +277,7 @@ static loff_t fat_lseek(struct device_d *dev, FILE *f, loff_t pos)
 	if (ret)
 		return ret;
 
+	f->pos = pos;
 	return pos;
 }
 
@@ -372,19 +373,15 @@ static int fat_probe(struct device_d *dev)
 {
 	struct fs_device_d *fsdev = dev_to_fs_device(dev);
 	struct fat_priv *priv = xzalloc(sizeof(struct fat_priv));
-	char *backingstore = fsdev->backingstore;
 	int ret;
 
 	dev->priv = priv;
 
-	if (!strncmp(backingstore , "/dev/", 5))
-		backingstore += 5;
-
-	priv->cdev = cdev_open(backingstore, O_RDWR);
-	if (!priv->cdev) {
-		ret = -ENOENT;
+	ret = fsdev_open_cdev(fsdev);
+	if (ret)
 		goto err_open;
-	}
+
+	priv->cdev = fsdev->cdev;
 
 	priv->fat.userdata = priv;
 	ret = f_mount(&priv->fat);
@@ -394,7 +391,6 @@ static int fat_probe(struct device_d *dev)
 	return 0;
 
 err_mount:
-	cdev_close(priv->cdev);
 err_open:
 	free(priv);
 
@@ -403,10 +399,6 @@ err_open:
 
 static void fat_remove(struct device_d *dev)
 {
-	struct fat_priv *priv = dev->priv;
-
-	cdev_close(priv->cdev);
-
 	free(dev->priv);
 }
 

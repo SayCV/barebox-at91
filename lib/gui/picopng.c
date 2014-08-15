@@ -761,9 +761,12 @@ int main(int argc, char **argv)
 	infp = fopen(fname, "rb");
 	if (!infp) {
 		perror("fopen");
+		free(inbuf);
 		return 1;
 	} else if (fread(inbuf, 1, insize, infp) != insize) {
 		perror("fread");
+		free(inbuf);
+		fclose(infp);
 		return 1;
 	}
 	fclose(infp);
@@ -793,6 +796,7 @@ int main(int argc, char **argv)
 		return 1;
 	} else if (fwrite(info->image->data, 1, outsize, outfp) != outsize) {
 		perror("fwrite");
+		fclose(outfp);
 		return 1;
 	}
 	fclose(outfp);
@@ -800,7 +804,7 @@ int main(int argc, char **argv)
 #ifdef ALLOC_DEBUG
 	png_alloc_node_t *node;
 	for (node = png_alloc_head, n = 1; node; node = node->next, n++)
-		printf("node %d (%p) addr = %p, size = %ld\n", n, node, node->addr, node->size);
+		printf("node %d (%p) addr = %p, size = %zu\n", n, node, node->addr, node->size);
 #endif
 	png_alloc_free_all(); // also frees info and image data from PNG_decode
 

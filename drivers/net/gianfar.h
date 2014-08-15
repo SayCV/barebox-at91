@@ -188,15 +188,15 @@
 #define RXBD_STATS		0x003f
 
 struct txbd8 {
-	ushort	     status;	     /* Status Fields */
-	ushort	     length;	     /* Buffer length */
-	uint	     bufPtr;	     /* Buffer Pointer */
+	uint16_t     status;	     /* Status Fields */
+	uint16_t     length;	     /* Buffer length */
+	uint32_t     bufPtr;	     /* Buffer Pointer */
 };
 
 struct rxbd8 {
-	ushort	     status;	     /* Status Fields */
-	ushort	     length;	     /* Buffer Length */
-	uint	     bufPtr;	     /* Buffer Pointer */
+	uint16_t     status;	     /* Status Fields */
+	uint16_t     length;	     /* Buffer Length */
+	uint32_t     bufPtr;	     /* Buffer Pointer */
 };
 
 /* eTSEC general control and status registers */
@@ -205,7 +205,6 @@ struct rxbd8 {
 #define GFAR_ECNTRL_OFFSET	0x020	/* Ethernet Control */
 #define GFAR_MINFLR_OFFSET	0x024	/* Minimum Frame Length */
 #define GFAR_DMACTRL_OFFSET	0x02c	/* DMA Control */
-#define GFAR_TBIPA_OFFSET	0x030	/* TBI PHY address */
 
 /* eTSEC transmit control and status register */
 #define GFAR_TSTAT_OFFSET	0x104	/* transmit status register */
@@ -263,15 +262,21 @@ struct rxbd8 {
 #define GFAR_ATTR_OFFSET	0xbf8	/* Default Attribute Register */
 #define GFAR_ATTRELI_OFFSET	0xbfc	/* Default Attribute Extract Len/Idx */
 
+struct gfar_phy {
+	void __iomem *regs;
+	struct device_d *dev;
+	struct mii_bus miibus;
+};
+
 struct gfar_private {
 	struct eth_device edev;
 	void __iomem *regs;
-	void __iomem *phyregs;
-	void __iomem *phyregs_sgmii;
+	int mdiobus_tbi;
+	struct gfar_phy *gfar_mdio;
+	struct gfar_phy *gfar_tbi;
 	struct phy_info *phyinfo;
-	struct mii_bus miibus;
-	volatile struct txbd8 *txbd;
-	volatile struct rxbd8 *rxbd;
+	struct txbd8 __iomem *txbd;
+	struct rxbd8 __iomem *rxbd;
 	uint txidx;
 	uint rxidx;
 	uint phyaddr;

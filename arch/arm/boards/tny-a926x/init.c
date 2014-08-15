@@ -24,7 +24,7 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
@@ -34,6 +34,7 @@
 #include <mach/at91sam9_sdramc.h>
 #include <gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91_pmc.h>
 #include <mach/at91_rstc.h>
 #include <spi/eeprom.h>
@@ -228,7 +229,6 @@ static int tny_a9260_devices_init(void)
 	ek_add_device_udc();
 	ek_add_device_spi();
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	tny_a9260_set_board_type();
 
 	devfs_add_partition("nand0", 0x00000, SZ_128K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
@@ -246,9 +246,27 @@ device_initcall(tny_a9260_devices_init);
 
 static int tny_a9260_console_init(void)
 {
+	if (machine_is_tny_a9g20()) {
+		barebox_set_model("Calao TNY-A9G20");
+		barebox_set_hostname("tny-a9g20");
+	} else if (machine_is_tny_a9263()) {
+		barebox_set_model("Calao TNY-A9263");
+		barebox_set_hostname("tny-a9263");
+	} else {
+		barebox_set_model("Calao TNY-A9260");
+		barebox_set_hostname("tny-a9260");
+	}
+
 	at91_register_uart(0, 0);
 	if (IS_ENABLED(CONFIG_CALAO_MOB_TNY_MD2))
 		at91_register_uart(2, ATMEL_UART_CTS | ATMEL_UART_RTS);
 	return 0;
 }
 console_initcall(tny_a9260_console_init);
+
+static int tny_a9260_main_clock(void)
+{
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(tny_a9260_main_clock);

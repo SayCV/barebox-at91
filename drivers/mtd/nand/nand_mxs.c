@@ -21,17 +21,19 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/nand.h>
 #include <linux/types.h>
+#include <linux/clk.h>
+#include <linux/err.h>
+#include <of_mtd.h>
 #include <common.h>
 #include <malloc.h>
 #include <errno.h>
 #include <driver.h>
 #include <init.h>
+#include <io.h>
+#include <dma/apbh-dma.h>
+#include <stmp-device.h>
 #include <asm/mmu.h>
-#include <asm/io.h>
-#include <mach/clock.h>
-#include <mach/imx-regs.h>
-#include <mach/dma.h>
-#include <mach/mxs.h>
+#include <mach/generic.h>
 
 #define	MX28_BLOCK_SFTRST				(1 << 31)
 #define	MX28_BLOCK_CLKGATE				(1 << 30)
@@ -121,12 +123,14 @@
 #define	BCH_FLASHLAYOUT0_META_SIZE_OFFSET		16
 #define	BCH_FLASHLAYOUT0_ECC0_MASK			(0xf << 12)
 #define	BCH_FLASHLAYOUT0_ECC0_OFFSET			12
+#define	IMX6_BCH_FLASHLAYOUT0_ECC0_OFFSET		11
 
 #define BCH_FLASH0LAYOUT1			0x00000090
 #define	BCH_FLASHLAYOUT1_PAGE_SIZE_MASK			(0xffff << 16)
 #define	BCH_FLASHLAYOUT1_PAGE_SIZE_OFFSET		16
 #define	BCH_FLASHLAYOUT1_ECCN_MASK			(0xf << 12)
 #define	BCH_FLASHLAYOUT1_ECCN_OFFSET			12
+#define	IMX6_BCH_FLASHLAYOUT1_ECCN_OFFSET		11
 
 #define	MXS_NAND_DMA_DESCRIPTOR_COUNT		4
 
@@ -137,10 +141,19 @@
 
 #define	MXS_NAND_BCH_TIMEOUT			10000
 
+enum gpmi_type {
+	GPMI_MXS,
+	GPMI_IMX6,
+};
+
 struct mxs_nand_info {
 	struct nand_chip	nand_chip;
 	void __iomem		*io_base;
+	void __iomem		*bch_base;
+	struct clk		*clk;
 	struct mtd_info		mtd;
+	enum gpmi_type		type;
+	int			dma_channel_base;
 	u32		version;
 
 	int		cur_chip;
@@ -168,6 +181,11 @@ struct mxs_nand_info {
 };
 
 struct nand_ecclayout fake_ecc_layout;
+
+static inline int mxs_nand_is_imx6(struct mxs_nand_info *info)
+{
+	return info->type == GPMI_IMX6;
+}
 
 static struct mxs_dma_desc *mxs_nand_get_dma_desc(struct mxs_nand_info *info)
 {
@@ -216,18 +234,15 @@ static uint32_t mxs_nand_aux_status_offset(void)
 static inline uint32_t mxs_nand_get_ecc_strength(uint32_t page_data_size,
 						uint32_t page_oob_size)
 {
-	if (page_data_size == 2048)
-		return 8;
+	int ecc_chunk_count = mxs_nand_ecc_chunk_cnt(page_data_size);
+	int ecc_strength = 0;
+	int gf_len = 13;  /* length of Galois Field for non-DDR nand */
 
-	if (page_data_size == 4096) {
-		if (page_oob_size == 128)
-			return 8;
+	ecc_strength = ((page_oob_size - MXS_NAND_METADATA_SIZE) * 8)
+		/ (gf_len * ecc_chunk_count);
 
-		if (page_oob_size == 218)
-			return 16;
-	}
-
-	return 0;
+	/* We need the minor even number. */
+	return rounddown(ecc_strength, 2);
 }
 
 static inline uint32_t mxs_nand_get_mark_offset(uint32_t page_data_size,
@@ -296,9 +311,9 @@ static uint32_t mxs_nand_mark_bit_offset(struct mtd_info *mtd)
 /*
  * Wait for BCH complete IRQ and clear the IRQ
  */
-static int mxs_nand_wait_for_bch_complete(void)
+static int mxs_nand_wait_for_bch_complete(struct mxs_nand_info *nand_info)
 {
-	void __iomem *bch_regs = (void __iomem *)MXS_BCH_BASE;
+	void __iomem *bch_regs = nand_info->bch_base;
 	int timeout = MXS_NAND_BCH_TIMEOUT;
 	int ret;
 
@@ -310,7 +325,7 @@ static int mxs_nand_wait_for_bch_complete(void)
 
 	ret = (timeout == 0) ? -ETIMEDOUT : 0;
 
-	writel(BCH_CTRL_COMPLETE_IRQ, bch_regs + BCH_CTRL + BIT_CLR);
+	writel(BCH_CTRL_COMPLETE_IRQ, bch_regs + BCH_CTRL + STMP_OFFSET_REG_CLR);
 
 	return ret;
 }
@@ -330,7 +345,7 @@ static void mxs_nand_cmd_ctrl(struct mtd_info *mtd, int data, unsigned int ctrl)
 	struct nand_chip *nand = mtd->priv;
 	struct mxs_nand_info *nand_info = nand->priv;
 	struct mxs_dma_desc *d;
-	uint32_t channel = MXS_DMA_CHANNEL_AHB_APBH_GPMI0 + nand_info->cur_chip;
+	uint32_t channel = nand_info->dma_channel_base + nand_info->cur_chip;
 	int ret;
 
 	/*
@@ -405,12 +420,18 @@ static int mxs_nand_device_ready(struct mtd_info *mtd)
 {
 	struct nand_chip *chip = mtd->priv;
 	struct mxs_nand_info *nand_info = chip->priv;
-	void __iomem *gpmi_regs = (void *)MXS_GPMI_BASE;
+	void __iomem *gpmi_regs = nand_info->io_base;
 	uint32_t tmp;
 
 	if (nand_info->version > GPMI_VERSION_TYPE_MX23) {
 		tmp = readl(gpmi_regs + GPMI_STAT);
-		tmp >>= (GPMI_STAT_READY_BUSY_OFFSET + nand_info->cur_chip);
+		/* i.MX6 has only one R/B actual pin, so if there are several
+		   R/B signals they must be all connected to this pin */
+		if (cpu_is_mx6())
+			tmp >>= GPMI_STAT_READY_BUSY_OFFSET;
+		else
+			tmp >>= (GPMI_STAT_READY_BUSY_OFFSET +
+					 nand_info->cur_chip);
 	} else {
 		tmp = readl(gpmi_regs + GPMI_DEBUG);
 		tmp >>= (GPMI_DEBUG_READY0_OFFSET + nand_info->cur_chip);
@@ -483,7 +504,7 @@ static void mxs_nand_read_buf(struct mtd_info *mtd, uint8_t *buf, int length)
 	struct nand_chip *nand = mtd->priv;
 	struct mxs_nand_info *nand_info = nand->priv;
 	struct mxs_dma_desc *d;
-	uint32_t channel = MXS_DMA_CHANNEL_AHB_APBH_GPMI0 + nand_info->cur_chip;
+	uint32_t channel = nand_info->dma_channel_base + nand_info->cur_chip;
 	int ret;
 
 	if (length > NAND_MAX_PAGESIZE) {
@@ -561,7 +582,7 @@ static void mxs_nand_write_buf(struct mtd_info *mtd, const uint8_t *buf,
 	struct nand_chip *nand = mtd->priv;
 	struct mxs_nand_info *nand_info = nand->priv;
 	struct mxs_dma_desc *d;
-	uint32_t channel = MXS_DMA_CHANNEL_AHB_APBH_GPMI0 + nand_info->cur_chip;
+	uint32_t channel = nand_info->dma_channel_base + nand_info->cur_chip;
 	int ret;
 
 	if (length > NAND_MAX_PAGESIZE) {
@@ -617,13 +638,14 @@ static uint8_t mxs_nand_read_byte(struct mtd_info *mtd)
  * Read a page from NAND.
  */
 static int mxs_nand_ecc_read_page(struct mtd_info *mtd, struct nand_chip *nand,
-					uint8_t *buf)
+					uint8_t *buf, int oob_required, int page)
 {
 	struct mxs_nand_info *nand_info = nand->priv;
 	struct mxs_dma_desc *d;
-	uint32_t channel = MXS_DMA_CHANNEL_AHB_APBH_GPMI0 + nand_info->cur_chip;
+	uint32_t channel = nand_info->dma_channel_base + nand_info->cur_chip;
 	uint32_t corrected = 0, failed = 0;
 	uint8_t	*status;
+	unsigned int  max_bitflips = 0;
 	int i, ret;
 
 	/* Compile the DMA descriptor - wait for ready. */
@@ -705,7 +727,7 @@ static int mxs_nand_ecc_read_page(struct mtd_info *mtd, struct nand_chip *nand,
 		goto rtn;
 	}
 
-	ret = mxs_nand_wait_for_bch_complete();
+	ret = mxs_nand_wait_for_bch_complete(nand_info);
 	if (ret) {
 		printf("MXS NAND: BCH read timeout\n");
 		goto rtn;
@@ -729,6 +751,7 @@ static int mxs_nand_ecc_read_page(struct mtd_info *mtd, struct nand_chip *nand,
 		}
 
 		corrected += status[i];
+		max_bitflips = max_t(unsigned int, max_bitflips, status[i]);
 	}
 
 	/* Propagate ECC status to the owning MTD. */
@@ -750,22 +773,24 @@ static int mxs_nand_ecc_read_page(struct mtd_info *mtd, struct nand_chip *nand,
 
 	memcpy(buf, nand_info->data_buf, mtd->writesize);
 
+	ret = 0;
 rtn:
 	mxs_nand_return_dma_descs(nand_info);
 
-	return ret;
+	return ret ? ret : max_bitflips;
 }
 
 /*
  * Write a page to NAND.
  */
-static void mxs_nand_ecc_write_page(struct mtd_info *mtd,
-				struct nand_chip *nand, const uint8_t *buf)
+static int mxs_nand_ecc_write_page(struct mtd_info *mtd,
+				struct nand_chip *nand, const uint8_t *buf,
+				int oob_required)
 {
 	struct mxs_nand_info *nand_info = nand->priv;
 	struct mxs_dma_desc *d;
-	uint32_t channel = MXS_DMA_CHANNEL_AHB_APBH_GPMI0 + nand_info->cur_chip;
-	int ret;
+	uint32_t channel = nand_info->dma_channel_base + nand_info->cur_chip;
+	int ret = 0;
 
 	memcpy(nand_info->data_buf, buf, mtd->writesize);
 	memcpy(nand_info->oob_buf, nand->oob_poi, mtd->oobsize);
@@ -805,7 +830,7 @@ static void mxs_nand_ecc_write_page(struct mtd_info *mtd,
 		goto rtn;
 	}
 
-	ret = mxs_nand_wait_for_bch_complete();
+	ret = mxs_nand_wait_for_bch_complete(nand_info);
 	if (ret) {
 		printf("MXS NAND: BCH write timeout\n");
 		goto rtn;
@@ -813,6 +838,8 @@ static void mxs_nand_ecc_write_page(struct mtd_info *mtd,
 
 rtn:
 	mxs_nand_return_dma_descs(nand_info);
+
+	return ret;
 }
 
 /*
@@ -828,7 +855,7 @@ static int mxs_nand_hook_read_oob(struct mtd_info *mtd, loff_t from,
 	struct mxs_nand_info *nand_info = chip->priv;
 	int ret;
 
-	if (ops->mode == MTD_OOB_RAW)
+	if (ops->mode == MTD_OPS_RAW)
 		nand_info->raw_oob_mode = 1;
 	else
 		nand_info->raw_oob_mode = 0;
@@ -853,7 +880,7 @@ static int mxs_nand_hook_write_oob(struct mtd_info *mtd, loff_t to,
 	struct mxs_nand_info *nand_info = chip->priv;
 	int ret;
 
-	if (ops->mode == MTD_OOB_RAW)
+	if (ops->mode == MTD_OPS_RAW)
 		nand_info->raw_oob_mode = 1;
 	else
 		nand_info->raw_oob_mode = 0;
@@ -931,7 +958,7 @@ static int mxs_nand_hook_block_markbad(struct mtd_info *mtd, loff_t ofs)
  * what to do.
  */
 static int mxs_nand_ecc_read_oob(struct mtd_info *mtd, struct nand_chip *nand,
-				int page, int cmd)
+				int page)
 {
 	struct mxs_nand_info *nand_info = nand->priv;
 	int column;
@@ -1037,37 +1064,52 @@ static int mxs_nand_scan_bbt(struct mtd_info *mtd)
 {
 	struct nand_chip *nand = mtd->priv;
 	struct mxs_nand_info *nand_info = nand->priv;
-	void __iomem *bch_regs = (void __iomem *)MXS_BCH_BASE;
-	uint32_t tmp;
+	void __iomem *bch_regs = nand_info->bch_base;
+	uint32_t layout0, layout1;
 	int ret;
 
 	/* Reset BCH. Don't use SFTRST on MX23 due to Errata #2847 */
-	ret = mxs_reset_block(bch_regs + BCH_CTRL,
+	ret = stmp_reset_block(bch_regs + BCH_CTRL,
 				nand_info->version == GPMI_VERSION_TYPE_MX23);
 	if (ret)
 		return ret;
 
-	/* Configure layout 0 */
-	tmp = (mxs_nand_ecc_chunk_cnt(mtd->writesize) - 1)
-		<< BCH_FLASHLAYOUT0_NBLOCKS_OFFSET;
-	tmp |= MXS_NAND_METADATA_SIZE << BCH_FLASHLAYOUT0_META_SIZE_OFFSET;
-	tmp |= (mxs_nand_get_ecc_strength(mtd->writesize, mtd->oobsize) >> 1)
-		<< BCH_FLASHLAYOUT0_ECC0_OFFSET;
-	tmp |= MXS_NAND_CHUNK_DATA_CHUNK_SIZE;
-	writel(tmp, bch_regs + BCH_FLASH0LAYOUT0);
+	if (mxs_nand_is_imx6(nand_info)) {
+		layout0 = (mxs_nand_ecc_chunk_cnt(mtd->writesize) - 1)
+					<< BCH_FLASHLAYOUT0_NBLOCKS_OFFSET |
+			MXS_NAND_METADATA_SIZE << BCH_FLASHLAYOUT0_META_SIZE_OFFSET |
+			(mxs_nand_get_ecc_strength(mtd->writesize, mtd->oobsize) >> 1)
+					<< IMX6_BCH_FLASHLAYOUT0_ECC0_OFFSET |
+			MXS_NAND_CHUNK_DATA_CHUNK_SIZE >> 2;
 
-	tmp = (mtd->writesize + mtd->oobsize)
-		<< BCH_FLASHLAYOUT1_PAGE_SIZE_OFFSET;
-	tmp |= (mxs_nand_get_ecc_strength(mtd->writesize, mtd->oobsize) >> 1)
-		<< BCH_FLASHLAYOUT1_ECCN_OFFSET;
-	tmp |= MXS_NAND_CHUNK_DATA_CHUNK_SIZE;
-	writel(tmp, bch_regs + BCH_FLASH0LAYOUT1);
+		layout1 = (mtd->writesize + mtd->oobsize)
+					<< BCH_FLASHLAYOUT1_PAGE_SIZE_OFFSET |
+			(mxs_nand_get_ecc_strength(mtd->writesize, mtd->oobsize) >> 1)
+					<< IMX6_BCH_FLASHLAYOUT1_ECCN_OFFSET |
+			MXS_NAND_CHUNK_DATA_CHUNK_SIZE >> 2;
+	} else {
+		layout0 = (mxs_nand_ecc_chunk_cnt(mtd->writesize) - 1)
+					<< BCH_FLASHLAYOUT0_NBLOCKS_OFFSET |
+			MXS_NAND_METADATA_SIZE << BCH_FLASHLAYOUT0_META_SIZE_OFFSET |
+			(mxs_nand_get_ecc_strength(mtd->writesize, mtd->oobsize) >> 1)
+					<< BCH_FLASHLAYOUT0_ECC0_OFFSET |
+			MXS_NAND_CHUNK_DATA_CHUNK_SIZE;
+
+		layout1 = (mtd->writesize + mtd->oobsize)
+					<< BCH_FLASHLAYOUT1_PAGE_SIZE_OFFSET |
+			(mxs_nand_get_ecc_strength(mtd->writesize, mtd->oobsize) >> 1)
+					<< BCH_FLASHLAYOUT1_ECCN_OFFSET |
+			MXS_NAND_CHUNK_DATA_CHUNK_SIZE;
+	}
+
+	writel(layout0, bch_regs + BCH_FLASH0LAYOUT0);
+	writel(layout1, bch_regs + BCH_FLASH0LAYOUT1);
 
 	/* Set *all* chip selects to use layout 0 */
 	writel(0, bch_regs + BCH_LAYOUTSELECT);
 
 	/* Enable BCH complete interrupt */
-	writel(BCH_CTRL_COMPLETE_IRQ_EN, bch_regs + BCH_CTRL + BIT_SET);
+	writel(BCH_CTRL_COMPLETE_IRQ_EN, bch_regs + BCH_CTRL + STMP_OFFSET_REG_SET);
 
 	/* Hook some operations at the MTD level. */
 	if (mtd->read_oob != mxs_nand_hook_read_oob) {
@@ -1127,8 +1169,8 @@ int mxs_nand_alloc_buffers(struct mxs_nand_info *nand_info)
  */
 int mxs_nand_hw_init(struct mxs_nand_info *info)
 {
-	void __iomem *gpmi_regs = (void *)MXS_GPMI_BASE;
-	void __iomem *bch_regs = (void __iomem *)MXS_BCH_BASE;
+	void __iomem *gpmi_regs = info->io_base;
+	void __iomem *bch_regs = info->bch_base;
 	int i = 0, ret;
 	u32 val;
 
@@ -1144,13 +1186,8 @@ int mxs_nand_hw_init(struct mxs_nand_info *info)
 			goto err2;
 	}
 
-	/* Init the DMA controller. */
-	mxs_dma_init();
-
-	imx_enable_nandclk();
-
 	/* Reset the GPMI block. */
-	ret = mxs_reset_block(gpmi_regs + GPMI_CTRL0, 0);
+	ret = stmp_reset_block(gpmi_regs + GPMI_CTRL0, 0);
 	if (ret)
 		return ret;
 
@@ -1158,7 +1195,7 @@ int mxs_nand_hw_init(struct mxs_nand_info *info)
 	info->version = val >> GPMI_VERSION_MINOR_OFFSET;
 
 	/* Reset BCH. Don't use SFTRST on MX23 due to Errata #2847 */
-	ret = mxs_reset_block(bch_regs + BCH_CTRL,
+	ret = stmp_reset_block(bch_regs + BCH_CTRL,
 				info->version == GPMI_VERSION_TYPE_MX23);
 	if (ret)
 		return ret;
@@ -1184,12 +1221,28 @@ err1:
 	return -ENOMEM;
 }
 
+static void mxs_nand_probe_dt(struct device_d *dev, struct mxs_nand_info *nand_info)
+{
+	struct nand_chip *nand = &nand_info->nand_chip;
+
+	if (!IS_ENABLED(CONFIG_OFTREE))
+		return;
+
+	if (of_get_nand_on_flash_bbt(dev->device_node))
+		nand->bbt_options |= NAND_BBT_USE_FLASH | NAND_BBT_NO_OOB;
+}
+
 static int mxs_nand_probe(struct device_d *dev)
 {
 	struct mxs_nand_info *nand_info;
 	struct nand_chip *nand;
 	struct mtd_info *mtd;
+	enum gpmi_type type;
 	int err;
+
+	err = dev_get_drvdata(dev, (unsigned long *)&type);
+	if (err)
+		type = GPMI_MXS;
 
 	nand_info = kzalloc(sizeof(struct mxs_nand_info), GFP_KERNEL);
 	if (!nand_info) {
@@ -1197,8 +1250,24 @@ static int mxs_nand_probe(struct device_d *dev)
 		return -ENOMEM;
 	}
 
-	/* XXX: Remove u-boot specific access pointers and use io_base instead? */
+	mxs_nand_probe_dt(dev, nand_info);
+
+	nand_info->type = type;
 	nand_info->io_base = dev_request_mem_region(dev, 0);
+	nand_info->bch_base = dev_request_mem_region(dev, 1);
+
+	nand_info->clk = clk_get(dev, NULL);
+	if (IS_ERR(nand_info->clk))
+		return PTR_ERR(nand_info->clk);
+
+	if (mxs_nand_is_imx6(nand_info)) {
+		clk_set_rate(nand_info->clk, 96000000);
+		clk_enable(nand_info->clk);
+		nand_info->dma_channel_base = 0;
+	} else {
+		nand_info->dma_channel_base = MXS_DMA_CHANNEL_AHB_APBH_GPMI0;
+		clk_enable(nand_info->clk);
+	}
 
 	err = mxs_nand_alloc_buffers(nand_info);
 	if (err)
@@ -1239,9 +1308,10 @@ static int mxs_nand_probe(struct device_d *dev)
 	nand->ecc.mode		= NAND_ECC_HW;
 	nand->ecc.bytes		= 9;
 	nand->ecc.size		= 512;
+	nand->ecc.strength	= 8;
 
 	/* first scan to find the device and get the page size */
-	err = nand_scan_ident(mtd, 1);
+	err = nand_scan_ident(mtd, 4, NULL);
 	if (err)
 		goto err2;
 
@@ -1261,9 +1331,25 @@ err1:
 	return err;
 }
 
+static __maybe_unused struct of_device_id gpmi_dt_ids[] = {
+	{
+		.compatible = "fsl,imx23-gpmi-nand",
+		.data = GPMI_MXS,
+	}, {
+		.compatible = "fsl,imx28-gpmi-nand",
+		.data = GPMI_MXS,
+	}, {
+		.compatible = "fsl,imx6q-gpmi-nand",
+		.data = GPMI_IMX6,
+	}, {
+		/* sentinel */
+	}
+};
+
 static struct driver_d mxs_nand_driver = {
 	.name  = "mxs_nand",
 	.probe = mxs_nand_probe,
+	.of_compatible = DRV_OF_COMPAT(gpmi_dt_ids),
 };
 device_platform_driver(mxs_nand_driver);
 

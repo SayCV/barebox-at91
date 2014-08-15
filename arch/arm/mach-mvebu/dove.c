@@ -17,15 +17,9 @@
 #include <common.h>
 #include <init.h>
 #include <io.h>
-#include <ns16550.h>
-#include <linux/clk.h>
-#include <linux/clkdev.h>
 #include <asm/memory.h>
+#include <linux/mbus.h>
 #include <mach/dove-regs.h>
-
-#define CONSOLE_UART_BASE	DOVE_UARTn_BASE(CONFIG_MVEBU_CONSOLE_UART)
-
-static struct clk *tclk;
 
 static inline void dove_remap_mc_regs(void)
 {
@@ -74,65 +68,23 @@ static inline void dove_memory_find(unsigned long *phys_base,
 	}
 }
 
-static struct NS16550_plat uart_plat = {
-	.shift = 2,
-};
-
-static int dove_add_uart(void)
-{
-	uart_plat.clock = clk_get_rate(tclk);
-	if (!add_ns16550_device(DEVICE_ID_DYNAMIC,
-				(unsigned int)CONSOLE_UART_BASE, 32,
-				IORESOURCE_MEM_32BIT, &uart_plat))
-		return -ENODEV;
-	return 0;
-}
-
-/*
- * Dove TCLK sample-at-reset configuation
- *
- * SAR0[24:23] : TCLK frequency
- *		 0 = 166 MHz
- *		 1 = 125 MHz
- *		 others reserved.
- */
-static int dove_init_clocks(void)
-{
-	uint32_t strap, sar = readl(DOVE_SAR_BASE + SAR0);
-	unsigned int rate;
-
-	strap = (sar & TCLK_FREQ_MASK) >> TCLK_FREQ_SHIFT;
-	switch (strap) {
-	case 0:
-		rate = 166666667;
-		break;
-	case 1:
-		rate = 125000000;
-		break;
-	default:
-		panic("Unknown TCLK strapping %d\n", strap);
-	}
-
-	tclk = clk_fixed("tclk", rate);
-	return clk_register_clkdev(tclk, NULL, "orion-timer");
-}
-
 static int dove_init_soc(void)
 {
 	unsigned long phys_base, phys_size;
 
+	barebox_set_model("Marvell Dove");
+	barebox_set_hostname("dove");
+
 	dove_remap_mc_regs();
-	dove_init_clocks();
-	add_generic_device("orion-timer", DEVICE_ID_SINGLE, NULL,
-			   (unsigned int)DOVE_TIMER_BASE, 0x30,
-			   IORESOURCE_MEM, NULL);
 	dove_memory_find(&phys_base, &phys_size);
-	arm_add_mem_device("ram0", phys_base, phys_size);
-	dove_add_uart();
+
+	mvebu_set_memory(phys_base, phys_size);
+	mvebu_mbus_add_range(0xf0, 0x01, MVEBU_REMAP_INT_REG_BASE);
+	mvebu_mbus_add_range(0xf0, 0x02, DOVE_REMAP_MC_REGS);
 
 	return 0;
 }
-postcore_initcall(dove_init_soc);
+core_initcall(dove_init_soc);
 
 void __noreturn reset_cpu(unsigned long addr)
 {

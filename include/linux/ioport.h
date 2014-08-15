@@ -9,6 +9,7 @@
 #define _LINUX_IOPORT_H
 
 #ifndef __ASSEMBLY__
+#include <linux/list.h>
 #include <linux/compiler.h>
 #include <linux/types.h>
 /*
@@ -137,14 +138,17 @@ static inline unsigned long resource_type(const struct resource *res)
 
 struct resource *request_iomem_region(const char *name,
 		resource_size_t start, resource_size_t end);
+struct resource *request_ioport_region(const char *name,
+		resource_size_t start, resource_size_t end);
 
-struct resource *request_region(struct resource *parent,
+struct resource *__request_region(struct resource *parent,
 		const char *name, resource_size_t end,
 		resource_size_t size);
 
 int release_region(struct resource *res);
 
 extern struct resource iomem_resource;
+extern struct resource ioport_resource;
 
 #endif /* __ASSEMBLY__ */
 #endif	/* _LINUX_IOPORT_H */

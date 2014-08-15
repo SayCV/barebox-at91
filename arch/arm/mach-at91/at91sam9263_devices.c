@@ -10,14 +10,16 @@
  *
  */
 #include <common.h>
+#include <init.h>
 #include <sizes.h>
+#include <gpio.h>
 #include <asm/armlinux.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <mach/at91_pmc.h>
 #include <mach/at91sam9263_matrix.h>
 #include <mach/at91sam9_sdramc.h>
 #include <mach/board.h>
-#include <mach/gpio.h>
+#include <mach/iomux.h>
 #include <mach/io.h>
 #include <i2c/i2c-gpio.h>
 
@@ -425,3 +427,10 @@ void at91_add_device_mci(short mmc_id, struct atmel_mci_platform_data *data)
 void at91_add_device_mci(short mmc_id, struct atmel_mci_platform_data *data) {}
 #endif
 
+static int at91_fixup_device(void)
+{
+	at91_rtt_irq_fixup(IOMEM(AT91SAM9263_BASE_RTT0));
+	at91_rtt_irq_fixup(IOMEM(AT91SAM9263_BASE_RTT1));
+	return 0;
+}
+late_initcall(at91_fixup_device);

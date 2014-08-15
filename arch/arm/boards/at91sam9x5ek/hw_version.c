@@ -18,6 +18,7 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <libbb.h>
+#include <libfile.h>
 #include <asm/armlinux.h>
 #include <of.h>
 
@@ -42,7 +43,6 @@ static struct board_info {
 	{"SAM9X25-CM",		BOARD_TYPE_CPU,		5},
 	{"SAM9X35-CM",		BOARD_TYPE_CPU,		6},
 	{"PDA-DM",		BOARD_TYPE_DM,		7},
-	{"SayCV-EK",		BOARD_TYPE_DM,		8},
 };
 
 static struct board_info* get_board_info_by_name(const char *name)
@@ -65,7 +65,6 @@ static struct vendor_info {
 	{"RONETIX",		VENDOR_RONETIX},
 	{"COGENT",		VENDOR_COGENT},
 	{"PDA",			VENDOR_PDA},
-	{"SayCV",			VENDOR_SayCV},
 };
 
 static struct vendor_info* get_vendor_info_by_name(const char *name)
@@ -231,18 +230,14 @@ static void at91sam9x5ek_devices_detect_one(const char *name)
 
 #define NODE_NAME_LEN  128
 
-static int cm_cogent_fixup(struct device_node *root)
+static int cm_cogent_fixup(struct device_node *root, void *unused)
 {
 	int ret;
 	struct device_node *node;
 
-	of_tree_for_each_node(node, root) {
-		struct device_node *slotnode;
-
-		if (!of_device_is_compatible(node, "atmel,hsmci"))
-			continue;
-
-		slotnode = of_find_child_by_name(node, "slot");
+	for_each_compatible_node(node, NULL, "atmel,hsmci") {
+		struct device_node *slotnode =
+			of_get_child_by_name(node, "slot");
 		if (!slotnode)
 			continue;
 
@@ -257,19 +252,14 @@ static int cm_cogent_fixup(struct device_node *root)
 
 void at91sam9x5ek_devices_detect_hw(void)
 {
-#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
 	at91sam9x5ek_devices_detect_one("/dev/ds24310");
 	at91sam9x5ek_devices_detect_one("/dev/ds24311");
 	at91sam9x5ek_devices_detect_one("/dev/ds24330");
-#else
-	sn  = VENDOR_COGENT<<5;
-	rev = 0;
-#endif	
+
 	pr_info("sn: 0x%x, rev: 0x%x\n", sn, rev);
 	armlinux_set_revision(rev);
 	armlinux_set_serial(sn);
-#if !( defined(HACKED_HW_VERSION_H_VENDOR_SayCV) && (HACKED_HW_VERSION_H_VENDOR_SayCV==1) )
+
 	if (at91sam9x5ek_cm_is_vendor(VENDOR_COGENT))
-		of_register_fixup(cm_cogent_fixup);
-#endif
+		of_register_fixup(cm_cogent_fixup, NULL);
 }

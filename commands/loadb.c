@@ -591,26 +591,6 @@ err_quit:
 }
 
 /**
- * @brief returns current used console device
- *
- * @return console device which is registered with CONSOLE_STDIN and
- * CONSOLE_STDOUT
- */
-static struct console_device *get_current_console(void)
-{
-	struct console_device *cdev;
-	/*
-	 * Assumption to have BOTH CONSOLE_STDIN AND STDOUT in the
-	 * same output console
-	 */
-	for_each_console(cdev) {
-		if ((cdev->f_active & (CONSOLE_STDIN | CONSOLE_STDOUT)))
-			return cdev;
-	}
-	return NULL;
-}
-
-/**
  * @brief provide the loadb(Kermit) or loadY mode support
  *
  * @param cmdtp
@@ -650,7 +630,7 @@ static int do_load_serial_bin(int argc, char *argv[])
 		}
 	}
 
-	cdev = get_current_console();
+	cdev = console_get_first_active();
 	if (NULL == cdev) {
 		printf("%s:No console device with STDIN and STDOUT\n", argv[0]);
 		return -ENODEV;
@@ -718,15 +698,19 @@ static int do_load_serial_bin(int argc, char *argv[])
 	return rcode;
 }
 
-static const __maybe_unused char cmd_loadb_help[] =
-    "[OPTIONS]\n"
-    "  -f file   - where to download to - defaults to " DEF_FILE "\n"
-    "  -o offset - what offset to download - defaults to 0\n"
-    "  -b baud   - baudrate at which to download - defaults to "
-    "console baudrate\n"
-    "  -c        - Create file if it is not present - default disabled";
+BAREBOX_CMD_HELP_START(loadb)
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT("-f FILE", "download to FILE (default image.bin")
+BAREBOX_CMD_HELP_OPT("-o OFFS", "destination file OFFSet (default 0)")
+BAREBOX_CMD_HELP_OPT("-b BAUD", "baudrate for download (default: console baudrate")
+BAREBOX_CMD_HELP_OPT("-c",      "create file if not present")
+BAREBOX_CMD_HELP_END
+
 BAREBOX_CMD_START(loadb)
 	.cmd = do_load_serial_bin,
-	.usage = "Load binary file over serial line (kermit mode)",
+	BAREBOX_CMD_DESC("load binary file over serial line (Kermit)")
+	BAREBOX_CMD_OPTS(" FILE")
+	BAREBOX_CMD_GROUP(CMD_GRP_BOOT)
 	BAREBOX_CMD_HELP(cmd_loadb_help)
 BAREBOX_CMD_END

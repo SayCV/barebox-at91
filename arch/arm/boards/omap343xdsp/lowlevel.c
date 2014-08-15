@@ -1,13 +1,16 @@
 #include <common.h>
+#include <init.h>
 #include <io.h>
 #include <sizes.h>
 #include <asm/barebox-arm-head.h>
 #include <asm/barebox-arm.h>
+#include <mach/generic.h>
 #include <mach/omap3-mux.h>
 #include <mach/sdrc.h>
 #include <mach/control.h>
 #include <mach/syslib.h>
 #include <mach/omap3-silicon.h>
+#include <mach/omap3-generic.h>
 #include <mach/sys_info.h>
 
 /**
@@ -533,7 +536,7 @@ static void mux_config(void)
  */
 static int sdp343x_board_init(void)
 {
-	int in_sdram = running_in_sdram();
+	int in_sdram = omap3_running_in_sdram();
 
 	if (!in_sdram)
 		omap3_core_init();
@@ -545,11 +548,13 @@ static int sdp343x_board_init(void)
 	return 0;
 }
 
-void __naked barebox_arm_reset_vector(void)
+void __naked __bare_init barebox_arm_reset_vector(uint32_t *data)
 {
+	omap3_save_bootinfo(data);
+
 	arm_cpu_lowlevel_init();
 
 	sdp343x_board_init();
 
-	barebox_arm_entry(0x80000000, SZ_128M, 0);
+	barebox_arm_entry(0x80000000, SZ_128M, NULL);
 }

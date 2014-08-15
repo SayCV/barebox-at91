@@ -33,6 +33,7 @@
 #include <io.h>
 #include <mach/omap3-silicon.h>
 #include <mach/gpmc.h>
+#include <mach/generic.h>
 #include <mach/sdrc.h>
 #include <mach/control.h>
 #include <mach/omap3-smx.h>
@@ -51,7 +52,7 @@
  *
  * @return void
  */
-void __noreturn reset_cpu(unsigned long addr)
+void __noreturn omap3_reset_cpu(unsigned long addr)
 {
 	writel(OMAP3_PRM_RSTCTRL_RESET, OMAP3_PRM_REG(RSTCTRL));
 
@@ -212,7 +213,7 @@ inline u32 get_sysboot_value(void)
  *
  * @return base address
  */
-u32 get_base(void)
+static u32 get_base(void)
 {
 	u32 val;
 	__asm__ __volatile__("mov %0, pc \n":"=r"(val)::"memory");
@@ -228,7 +229,7 @@ u32 get_base(void)
  *
  * @return 1 if we are running in XIP mode, else return 0
  */
-u32 running_in_flash(void)
+u32 omap3_running_in_flash(void)
 {
 	if (get_base() < 4)
 		return 1;	/* in flash */
@@ -242,7 +243,7 @@ u32 running_in_flash(void)
  *
  * @return  1 if we are running in SRAM, else return 0
  */
-u32 running_in_sram(void)
+u32 omap3_running_in_sram(void)
 {
 	if (get_base() == 4)
 		return 1;	/* in SRAM */
@@ -257,13 +258,13 @@ u32 running_in_sram(void)
  *
  * @return 1 if we are running from SDRAM, else return 0
  */
-u32 running_in_sdram(void)
+u32 omap3_running_in_sdram(void)
 {
 	if (get_base() > 4)
 		return 1;	/* in sdram */
 	return 0;		/* running in SRAM or FLASH */
 }
-EXPORT_SYMBOL(running_in_sdram);
+EXPORT_SYMBOL(omap3_running_in_sdram);
 
 /**
  * @brief Is this an XIP type device or a stream one
@@ -407,7 +408,7 @@ void setup_auxcr(void);
 static void try_unlock_memory(void)
 {
 	int mode;
-	int in_sdram = running_in_sdram();
+	int in_sdram = omap3_running_in_sdram();
 
 	/* if GP device unlock device SRAM for general use */
 	/* secure code breaks for Secure/Emulation device - HS/E/T */
@@ -468,18 +469,34 @@ void omap3_core_init(void)
 static int omap3_bootsource(void)
 {
 	enum bootsource src = BOOTSOURCE_UNKNOWN;
-	u32 bootsrc = readl(OMAP3_TRACING_VECTOR1);
+	uint32_t *omap3_bootinfo = (void *)OMAP3_SRAM_SCRATCH_SPACE;
 
-	if (bootsrc & (1 << 2))
+	switch (omap3_bootinfo[1] & 0xFF) {
+	case 0x02:
 		src = BOOTSOURCE_NAND;
-	if (bootsrc & (1 << 6))
+		break;
+	case 0x06:
 		src = BOOTSOURCE_MMC;
+		break;
+	case 0x11:
+		src = BOOTSOURCE_USB;
+		break;
+	default:
+		src = BOOTSOURCE_UNKNOWN;
+	}
+
 	bootsource_set(src);
 	bootsource_set_instance(0);
 
 	return 0;
 }
-postcore_initcall(omap3_bootsource);
+
+int omap3_init(void)
+{
+	omap_gpmc_base = (void *)OMAP3_GPMC_BASE;
+
+	return omap3_bootsource();
+}
 
 /* GPMC timing for OMAP3 nand device */
 const struct gpmc_config omap3_nand_cfg = {
@@ -515,5 +532,9 @@ static int omap3_gpio_init(void)
 
 	return 0;
 }
-coredevice_initcall(omap3_gpio_init);
+
+int omap3_devices_init(void)
+{
+	return omap3_gpio_init();
+}
 #endif

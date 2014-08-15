@@ -12,7 +12,10 @@ CPPFLAGS += -Wa,-me500x2 -msoft-float -mno-string
 endif
 
 board-$(CONFIG_MACH_PHYCORE_MPC5200B_TINY)	:= pcm030
+board-$(CONFIG_P1010RDB)			:= freescale-p1010rdb
 board-$(CONFIG_P2020RDB)			:= freescale-p2020rdb
+board-$(CONFIG_P1022DS)				:= freescale-p1022ds
+board-$(CONFIG_DA923RC)				:= geip-da923rc
 
 machine-$(CONFIG_ARCH_MPC5200)			:= mpc5xxx
 machine-$(CONFIG_ARCH_MPC85XX)			:= mpc85xx
@@ -62,4 +65,8 @@ endif
 common-y += $(BOARD) $(CPU) $(MACH)
 common-y += arch/ppc/lib/
 
+ifdef CONFIG_MPC85xx
+lds-y += $(MACH)/barebox.lds
+else
 lds-y += $(BOARD)/barebox.lds
+endif

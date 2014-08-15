@@ -53,6 +53,18 @@ static void interface_clocks_enable(void)
 	/* GPIO0 */
 	__raw_writel(PRCM_MOD_EN, CM_WKUP_GPIO0_CLKCTRL);
 	while (__raw_readl(CM_WKUP_GPIO0_CLKCTRL) != PRCM_MOD_EN);
+
+	/* GPIO1 */
+	__raw_writel(PRCM_MOD_EN, CM_PER_GPIO1_CLKCTRL);
+	while (__raw_readl(CM_PER_GPIO1_CLKCTRL) != PRCM_MOD_EN);
+
+	/* GPIO2 */
+	__raw_writel(PRCM_MOD_EN, CM_PER_GPIO2_CLKCTRL);
+	while (__raw_readl(CM_PER_GPIO2_CLKCTRL) != PRCM_MOD_EN);
+
+	/* GPIO3 */
+	__raw_writel(PRCM_MOD_EN, CM_PER_GPIO3_CLKCTRL);
+	while (__raw_readl(CM_PER_GPIO3_CLKCTRL) != PRCM_MOD_EN);
 }
 
 static void power_domain_transition_enable(void)
@@ -144,7 +156,7 @@ static void per_clocks_enable(void)
 	while (__raw_readl(CM_PER_SPI1_CLKCTRL) != PRCM_MOD_EN);
 }
 
-static void mpu_pll_config(int mpupll_M)
+static void mpu_pll_config(int mpupll_M, int osc)
 {
 	u32 clkmode, clksel, div_m2;
 
@@ -158,7 +170,7 @@ static void mpu_pll_config(int mpupll_M)
 	while(__raw_readl(CM_IDLEST_DPLL_MPU) != 0x00000100);
 
 	clksel = clksel & (~0x7ffff);
-	clksel = clksel | ((mpupll_M << 0x8) | MPUPLL_N);
+	clksel = clksel | ((mpupll_M << 0x8) | (osc - 1));
 	__raw_writel(clksel, CM_CLKSEL_DPLL_MPU);
 
 	div_m2 = div_m2 & ~0x1f;
@@ -171,7 +183,7 @@ static void mpu_pll_config(int mpupll_M)
 	while(__raw_readl(CM_IDLEST_DPLL_MPU) != 0x1);
 }
 
-static void core_pll_config(void)
+static void core_pll_config(int osc)
 {
 	u32 clkmode, clksel, div_m4, div_m5, div_m6;
 
@@ -187,7 +199,7 @@ static void core_pll_config(void)
 	while(__raw_readl(CM_IDLEST_DPLL_CORE) != 0x00000100);
 
 	clksel = clksel & (~0x7ffff);
-	clksel = clksel | ((COREPLL_M << 0x8) | COREPLL_N);
+	clksel = clksel | ((COREPLL_M << 0x8) | (osc - 1));
 	__raw_writel(clksel, CM_CLKSEL_DPLL_CORE);
 
 	div_m4 = div_m4 & ~0x1f;
@@ -209,7 +221,7 @@ static void core_pll_config(void)
 	while(__raw_readl(CM_IDLEST_DPLL_CORE) != 0x1);
 }
 
-static void per_pll_config(void)
+static void per_pll_config(int osc)
 {
 	u32 clkmode, clksel, div_m2;
 
@@ -223,7 +235,7 @@ static void per_pll_config(void)
 	while(__raw_readl(CM_IDLEST_DPLL_PER) != 0x00000100);
 
 	clksel = clksel & (~0x7ffff);
-	clksel = clksel | ((PERPLL_M << 0x8) | PERPLL_N);
+	clksel = clksel | ((PERPLL_M << 0x8) | (osc - 1));
 	__raw_writel(clksel, CM_CLKSEL_DPLL_PER);
 
 	div_m2 = div_m2 & ~0x7f;
@@ -236,7 +248,7 @@ static void per_pll_config(void)
 	while(__raw_readl(CM_IDLEST_DPLL_PER) != 0x1);
 }
 
-static void ddr_pll_config(void)
+static void ddr_pll_config(int osc, int ddrpll_M)
 {
 	u32 clkmode, clksel, div_m2;
 
@@ -251,7 +263,7 @@ static void ddr_pll_config(void)
 	while ((__raw_readl(CM_IDLEST_DPLL_DDR) & 0x00000100) != 0x00000100);
 
 	clksel = clksel & (~0x7ffff);
-	clksel = clksel | ((DDRPLL_M << 0x8) | DDRPLL_N);
+	clksel = clksel | ((ddrpll_M << 0x8) | (osc - 1));
 	__raw_writel(clksel, CM_CLKSEL_DPLL_DDR);
 
 	div_m2 = div_m2 & 0xFFFFFFE0;
@@ -264,7 +276,7 @@ static void ddr_pll_config(void)
 	while ((__raw_readl(CM_IDLEST_DPLL_DDR) & 0x00000001) != 0x1);
 }
 
-void enable_ddr_clocks(void)
+void am33xx_enable_ddr_clocks(void)
 {
 	/* Enable the  EMIF_FW Functional clock */
 	__raw_writel(PRCM_MOD_EN, CM_PER_EMIF_FW_CLKCTRL);
@@ -276,18 +288,18 @@ void enable_ddr_clocks(void)
 		PRCM_L3_GCLK_ACTIVITY));
 	/* Poll if module is functional */
 	while ((__raw_readl(CM_PER_EMIF_CLKCTRL)) != PRCM_MOD_EN);
-
 }
 
 /*
  * Configure the PLL/PRCM for necessary peripherals
  */
-void pll_init()
+void am33xx_pll_init(int mpupll_M, int osc, int ddrpll_M)
 {
-	mpu_pll_config(MPUPLL_M_500);
-	core_pll_config();
-	per_pll_config();
-	ddr_pll_config();
+	mpu_pll_config(mpupll_M, osc);
+	core_pll_config(osc);
+	per_pll_config(osc);
+	ddr_pll_config(osc, ddrpll_M);
+
 	/* Enable the required interconnect clocks */
 	interface_clocks_enable();
 	/* Enable power domain transition */

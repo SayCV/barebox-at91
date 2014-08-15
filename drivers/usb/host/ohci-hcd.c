@@ -794,7 +794,7 @@ static struct ed *ep_add_ed(struct usb_device *usb_dev, unsigned long pipe,
 			| (usb_pipeisoc(pipe) ? 0x8000 : 0)
 			| (usb_pipecontrol(pipe) ? 0 : \
 					   (usb_pipeout(pipe) ? 0x800 : 0x1000))
-			| usb_pipeslow(pipe) << 13
+			| (usb_dev->speed == USB_SPEED_LOW) << 13
 			| usb_maxpacket(usb_dev, pipe) << 16);
 
 	if (ed->type == PIPE_INTERRUPT && ed->state == ED_UNLINK) {
@@ -1794,6 +1794,7 @@ static int ohci_probe(struct device_d *dev)
 	ohci = xzalloc(sizeof(struct ohci));
 	host = &ohci->host;
 
+	host->hw_dev = dev;
 	host->init = ohci_init;
 	host->submit_int_msg = submit_int_msg;
 	host->submit_control_msg = submit_control_msg;

@@ -17,10 +17,13 @@
  *
  */
 #include <common.h>
+#include <init.h>
 #include <io.h>
 #include <sizes.h>
+#include <mach/generic.h>
 #include <mach/omap4-mux.h>
 #include <mach/omap4-silicon.h>
+#include <mach/omap4-generic.h>
 #include <mach/omap4-clock.h>
 #include <mach/syslib.h>
 #include <asm/barebox-arm.h>
@@ -52,6 +55,7 @@ static void noinline panda_init_lowlevel(void)
 	struct dpll_param per = OMAP4_PER_DPLL_PARAM_38M4;
 	struct dpll_param abe = OMAP4_ABE_DPLL_PARAM_38M4;
 	struct dpll_param usb = OMAP4_USB_DPLL_PARAM_38M4;
+	unsigned int rev = omap4_revision();
 
 	writel(CM_SYS_CLKSEL_38M4, CM_SYS_CLKSEL);
 
@@ -69,12 +73,16 @@ static void noinline panda_init_lowlevel(void)
 
 	omap4_ddr_init(&ddr_regs_400_mhz_2cs, &core);
 
-	/* Set VCORE1 = 1.3 V, VCORE2 = VCORE3 = 1.21V */
-	omap4_scale_vcores(TPS62361_VSEL0_GPIO);
+	if (rev < OMAP4460_ES1_0)
+		omap4430_scale_vcores();
+	else
+		omap4460_scale_vcores(TPS62361_VSEL0_GPIO, 1210);
 }
 
-void barebox_arm_reset_vector(void)
+void __bare_init __naked barebox_arm_reset_vector(uint32_t *data)
 {
+	omap4_save_bootinfo(data);
+
 	arm_cpu_lowlevel_init();
 
 	if (get_pc() > 0x80000000)
@@ -84,5 +92,5 @@ void barebox_arm_reset_vector(void)
 
 	panda_init_lowlevel();
 out:
-	barebox_arm_entry(0x80000000, SZ_1G, 0);
+	barebox_arm_entry(0x80000000, SZ_1G, NULL);
 }

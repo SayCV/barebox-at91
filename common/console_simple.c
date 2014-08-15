@@ -3,6 +3,7 @@
 #include <fs.h>
 #include <errno.h>
 #include <debug_ll.h>
+#include <console.h>
 
 LIST_HEAD(console_list);
 EXPORT_SYMBOL(console_list);
@@ -28,7 +29,7 @@ EXPORT_SYMBOL(console_puts);
 void console_putc(unsigned int ch, char c)
 {
 	if (!console) {
-		PUTC_LL(c);
+		putc_ll(c);
 		return;
 	}
 
@@ -40,6 +41,9 @@ EXPORT_SYMBOL(console_putc);
 
 int tstc(void)
 {
+	if (unlikely(!console_is_input_allow()))
+		return 0;
+
 	if (!console)
 		return 0;
 
@@ -49,6 +53,9 @@ EXPORT_SYMBOL(tstc);
 
 int getc(void)
 {
+	if (unlikely(!console_is_input_allow()))
+		return -EPERM;
+
 	if (!console)
 		return -EINVAL;
 	return console->getc(console);
@@ -81,6 +88,13 @@ int console_register(struct console_device *newcdev)
 	console = newcdev;
 	console_list.prev = console_list.next = &newcdev->list;
 	newcdev->list.prev = newcdev->list.next = &console_list;
+
+	if (newcdev->setbrg) {
+		newcdev->baudrate = CONFIG_BAUDRATE;
+		newcdev->setbrg(newcdev, newcdev->baudrate);
+	}
+
+	newcdev->f_active = CONSOLE_STDIN | CONSOLE_STDOUT | CONSOLE_STDERR;
 
 	barebox_banner();
 

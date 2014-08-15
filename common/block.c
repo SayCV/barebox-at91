@@ -25,6 +25,8 @@
 
 #define BLOCKSIZE(blk)	(1 << blk->blockbits)
 
+LIST_HEAD(block_device_list);
+
 /* a chunk of contigous data */
 struct chunk {
 	void *data; /* data buffer */
@@ -43,12 +45,18 @@ static int writebuffer_flush(struct block_device *blk)
 {
 	struct chunk *chunk;
 
+	if (!IS_ENABLED(CONFIG_BLOCK_WRITE))
+		return 0;
+
 	list_for_each_entry(chunk, &blk->buffered_blocks, list) {
 		if (chunk->dirty) {
 			blk->ops->write(blk, chunk->data, chunk->block_start, blk->rdbufsize);
 			chunk->dirty = 0;
 		}
 	}
+
+	if (blk->ops->flush)
+		return blk->ops->flush(blk);
 
 	return 0;
 }
@@ -364,6 +372,8 @@ int blockdevice_register(struct block_device *blk)
 	if (ret)
 		return ret;
 
+	list_add_tail(&blk->list, &block_device_list);
+
 	return 0;
 }
 
@@ -384,6 +394,7 @@ int blockdevice_unregister(struct block_device *blk)
 	}
 
 	devfs_remove(&blk->cdev);
+	list_del(&blk->list);
 
 	return 0;
 }

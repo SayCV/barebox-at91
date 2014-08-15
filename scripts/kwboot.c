@@ -334,6 +334,7 @@ kwboot_xm_makeblock(struct kwboot_block *block, const void *data,
 	size_t n;
 	int i;
 
+	block->soh = SOH;
 	block->pnum = pnum;
 	block->_pnum = ~block->pnum;
 
@@ -551,7 +552,6 @@ kwboot_mmap_image(const char *path, size_t *size, int prot)
 	void *img;
 
 	rc = -1;
-	fd = -1;
 	img = NULL;
 
 	fd = open(path, O_RDONLY);

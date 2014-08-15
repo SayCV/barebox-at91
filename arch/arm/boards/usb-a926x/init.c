@@ -24,7 +24,7 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
@@ -35,6 +35,7 @@
 #include <gpio.h>
 #include <led.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91_pmc.h>
 #include <mach/at91_rstc.h>
 #include <gpio_keys.h>
@@ -338,16 +339,16 @@ struct gpio_led dab_mmx_leds[] = {
 #ifdef CONFIG_KEYBOARD_GPIO
 struct gpio_keys_button keys[] = {
 	{
-		.code = KEY_UP,
+		.code = BB_KEY_UP,
 		.gpio = AT91_PIN_PB25,
 	}, {
-		.code = KEY_HOME,
+		.code = BB_KEY_HOME,
 		.gpio = AT91_PIN_PB13,
 	}, {
-		.code = KEY_DOWN,
+		.code = BB_KEY_DOWN,
 		.gpio = AT91_PIN_PA26,
 	}, {
-		.code = KEY_ENTER,
+		.code = BB_KEY_ENTER,
 		.gpio = AT91_PIN_PC9,
 	},
 };
@@ -402,7 +403,6 @@ static int usb_a9260_devices_init(void)
 	ek_add_device_button();
 	usb_a9260_device_dab_mmx();
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	usb_a9260_set_board_type();
 
 	devfs_add_partition("nand0", 0x00000, SZ_128K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
@@ -423,6 +423,17 @@ static int usb_a9260_console_init(void)
 {
 	struct device_d *dev;
 
+	if (machine_is_usb_a9260()) {
+		barebox_set_model("Calao USB-A9260");
+		barebox_set_hostname("usb-a9260");
+	} else if (machine_is_usb_a9g20()) {
+		barebox_set_model("Calao USB-A9G20");
+		barebox_set_hostname("usb-a9g20");
+	} else {
+		barebox_set_model("Calao USB-A9263");
+		barebox_set_hostname("usb-a9263");
+	}
+
 	at91_register_uart(0, 0);
 
 	if (IS_ENABLED(CONFIG_CALAO_DAB_MMX)) {
@@ -436,3 +447,10 @@ static int usb_a9260_console_init(void)
 }
 console_initcall(usb_a9260_console_init);
 #endif
+
+static int usb_a9260_main_clock(void)
+{
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(usb_a9260_main_clock);

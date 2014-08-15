@@ -19,18 +19,19 @@
 #include <init.h>
 #include <environment.h>
 #include <fec.h>
+#include <gpio.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
 #include <partition.h>
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <linux/mtd/nand.h>
 #include <mach/at91_pmc.h>
 #include <mach/board.h>
-#include <mach/gpio.h>
+#include <mach/iomux.h>
 #include <mach/io.h>
 
 static struct macb_platform_data macb_pdata = {
@@ -62,7 +63,6 @@ static int mmccpu_devices_init(void)
 	devfs_add_partition("nor0", 0x00000, 256 * 1024, DEVFS_PARTITION_FIXED, "self0");
 	devfs_add_partition("nor0", 0x40000, 128 * 1024, DEVFS_PARTITION_FIXED, "env0");
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	armlinux_set_architecture(MACH_TYPE_MMCCPU);
 
 	return 0;
@@ -72,8 +72,18 @@ device_initcall(mmccpu_devices_init);
 
 static int mmccpu_console_init(void)
 {
+	barebox_set_model("Bucyrus MMC-CPU");
+	barebox_set_hostname("mmccpu");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 
 console_initcall(mmccpu_console_init);
+
+static int mmccpu_main_clock(void)
+{
+	at91_set_main_clock(18432000);
+	return 0;
+}
+pure_initcall(mmccpu_main_clock);

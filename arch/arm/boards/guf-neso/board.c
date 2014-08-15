@@ -21,6 +21,7 @@
 #include <fec.h>
 #include <notifier.h>
 #include <partition.h>
+#include <gpio.h>
 #include <fs.h>
 #include <fcntl.h>
 #include <nand.h>
@@ -33,7 +34,6 @@
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
 
-#include <mach/gpio.h>
 #include <mach/spi.h>
 #include <mach/imx27-regs.h>
 #include <mach/iomux-mx27.h>
@@ -279,7 +279,6 @@ static int neso_devices_init(void)
 	devfs_add_partition("nand0", 0x40000, 0x80000, DEVFS_PARTITION_FIXED, "env_raw");
 	dev_add_bb_dev("env_raw", "env0");
 
-	armlinux_set_bootparams((void *)0xa0000100);
 	armlinux_set_architecture(MACH_TYPE_NESO);
 
 	return 0;
@@ -289,6 +288,9 @@ device_initcall(neso_devices_init);
 
 static int neso_console_init(void)
 {
+	barebox_set_model("Garz & Fricke NESO");
+	barebox_set_hostname("neso");
+
 	imx27_add_uart0();
 
 	return 0;

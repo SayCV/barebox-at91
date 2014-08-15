@@ -1,6 +1,7 @@
 #include <common.h>
 #include <ata_drive.h>
 #include <io.h>
+#include <of.h>
 #include <clock.h>
 #include <disks.h>
 #include <driver.h>
@@ -58,7 +59,7 @@ static int imx53_sata_init(struct imx_ahci *imx_ahci)
 	 */
 	val = readl(base + 0x180c);
 	val &= (0x3 << 1);
-	val |= (0x1 << 1);
+	val |= (0x2 << 1);
 	writel(val, base + 0x180c);
 
 	return 0;
@@ -141,9 +142,22 @@ static struct platform_device_id imx_sata_ids[] = {
 	},
 };
 
+static __maybe_unused struct of_device_id imx_sata_dt_ids[] = {
+	{
+		.compatible = "fsl,imx6q-ahci",
+		.data = (unsigned long)&data_imx6,
+	}, {
+		.compatible = "fsl,imx53-ahci",
+		.data = (unsigned long)&data_imx53,
+	}, {
+		/* sentinel */
+	}
+};
+
 static struct driver_d imx_sata_driver = {
 	.name   = "imx-sata",
 	.probe  = imx_sata_probe,
 	.id_table = imx_sata_ids,
+	.of_compatible = DRV_OF_COMPAT(imx_sata_dt_ids),
 };
 device_platform_driver(imx_sata_driver);

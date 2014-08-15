@@ -17,6 +17,7 @@
 #include <linux/err.h>
 #include <errno.h>
 #include <io.h>
+#include <of.h>
 #include <clock.h>
 
 #include <spi/spi.h>
@@ -624,7 +625,7 @@ add_dataflash_otp(struct spi_device *spi, char *name,
 
 	device = &priv->mtd;
 	device->name = (pdata && pdata->name) ? pdata->name : "dataflash";
-	device->size = nr_pages * pagesize;
+	device->size = nr_pages * (uint64_t)pagesize;
 	device->erasesize = pagesize;
 	device->writesize = pagesize;
 	device->type = MTD_DATAFLASH;
@@ -643,7 +644,7 @@ add_dataflash_otp(struct spi_device *spi, char *name,
 			name, (long long)((device->size + 1023) >> 10),
 			pagesize, otp_tag);
 
-	err = add_mtd_device(device, device->name);
+	err = add_mtd_device(device, device->name, DEVICE_ID_DYNAMIC);
 
 	if (!err)
 		return 0;

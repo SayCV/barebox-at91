@@ -28,37 +28,38 @@
 
 #include <linux/list.h>
 #include <block.h>
+#include <regulator.h>
 
 /* Firmware revisions for SD cards */
 #define SD_VERSION_SD		0x20000
-#define SD_VERSION_2		(SD_VERSION_SD | 0x20)
-#define SD_VERSION_1_0		(SD_VERSION_SD | 0x10)
-#define SD_VERSION_1_10		(SD_VERSION_SD | 0x1a)
+#define SD_VERSION_2		(SD_VERSION_SD | 0x200)
+#define SD_VERSION_1_0		(SD_VERSION_SD | 0x100)
+#define SD_VERSION_1_10		(SD_VERSION_SD | 0x1a0)
 
 /* Firmware revisions for MMC cards */
 #define MMC_VERSION_MMC		0x10000
 #define MMC_VERSION_UNKNOWN	(MMC_VERSION_MMC)
-#define MMC_VERSION_1_2		(MMC_VERSION_MMC | 0x12)
-#define MMC_VERSION_1_4		(MMC_VERSION_MMC | 0x14)
-#define MMC_VERSION_2_2		(MMC_VERSION_MMC | 0x22)
-#define MMC_VERSION_3		(MMC_VERSION_MMC | 0x30)
-#define MMC_VERSION_4		(MMC_VERSION_MMC | 0x40)
+#define MMC_VERSION_1_2		(MMC_VERSION_MMC | 0x120)
+#define MMC_VERSION_1_4		(MMC_VERSION_MMC | 0x140)
+#define MMC_VERSION_2_2		(MMC_VERSION_MMC | 0x220)
+#define MMC_VERSION_3		(MMC_VERSION_MMC | 0x300)
+#define MMC_VERSION_4		(MMC_VERSION_MMC | 0x400)
+#define MMC_VERSION_4_1		(MMC_VERSION_MMC | 0x410)
+#define MMC_VERSION_4_2		(MMC_VERSION_MMC | 0x420)
+#define MMC_VERSION_4_3		(MMC_VERSION_MMC | 0x430)
+#define MMC_VERSION_4_41	(MMC_VERSION_MMC | 0x441)
+#define MMC_VERSION_4_5		(MMC_VERSION_MMC | 0x450)
 
-#define MMC_MODE_HS		0x001
-#define MMC_MODE_HS_52MHz	0x010
-#define MMC_CAP_SPI		0x020
-#define MMC_MODE_4BIT		0x100
-#define MMC_MODE_8BIT		0x200
+#define MMC_CAP_SPI			(1 << 0)
+#define MMC_CAP_4_BIT_DATA		(1 << 1)
+#define MMC_CAP_8_BIT_DATA		(1 << 2)
+#define MMC_CAP_SD_HIGHSPEED		(1 << 3)
+#define MMC_CAP_MMC_HIGHSPEED		(1 << 4)
+#define MMC_CAP_MMC_HIGHSPEED_52MHZ	(1 << 5)
 
 #define SD_DATA_4BIT		0x00040000
 
 #define IS_SD(x) (x->version & SD_VERSION_SD)
-
-#ifdef CONFIG_MCI_SPI
-#define mmc_host_is_spi(host)	((host)->host_caps & MMC_CAP_SPI)
-#else
-#define mmc_host_is_spi(host)	0
-#endif
 
 #define MMC_DATA_READ		1
 #define MMC_DATA_WRITE		2
@@ -291,13 +292,18 @@ struct mci;
 struct mci_host {
 	struct device_d *hw_dev;	/**< the host MCI hardware device */
 	struct mci *mci;
-	char *devname;			/**< the devicename for the card, defaults to disk%d */
+	const char *devname;		/**< the devicename for the card, defaults to disk%d */
 	unsigned voltages;
 	unsigned host_caps;	/**< Host's interface capabilities, refer MMC_VDD_* */
 	unsigned f_min;		/**< host interface lower limit */
 	unsigned f_max;		/**< host interface upper limit */
 	unsigned clock;		/**< Current clock used to talk to the card */
 	unsigned bus_width;	/**< used data bus width to the card */
+	unsigned max_req_size;
+	unsigned dsr_val;	/**< optional dsr value */
+	int use_dsr;		/**< optional dsr usage flag */
+	bool non_removable;	/**< device is non removable */
+	struct regulator *supply;
 
 	/** init the host interface */
 	int (*init)(struct mci_host*, struct device_d*);
@@ -341,13 +347,14 @@ struct mci {
 	unsigned csd[4];	/**< card's "card specific data register" */
 	unsigned cid[4];	/**< card's "card identification register" */
 	unsigned short rca;	/* FIXME */
-	unsigned tran_speed;	/**< not yet used */
+	unsigned tran_speed;	/**< Maximum transfer speed */
 	/** currently used data block length for read accesses */
 	unsigned read_bl_len;
 	/** currently used data block length for write accesses */
 	unsigned write_bl_len;
 	uint64_t capacity;	/**< Card's data capacity in bytes */
 	int ready_for_use;	/** true if already probed */
+	int dsr_imp;		/**< DSR implementation state from CSD */
 	char *ext_csd;
 	int probe;
 	struct param_d *param_probe;
@@ -365,5 +372,13 @@ struct mci {
 int mci_register(struct mci_host*);
 void mci_of_parse(struct mci_host *host);
 int mci_detect_card(struct mci_host *);
+
+static inline int mmc_host_is_spi(struct mci_host *host)
+{
+	if (IS_ENABLED(CONFIG_MCI_SPI))
+		return host->host_caps & MMC_CAP_SPI;
+	else
+		return 0;
+}
 
 #endif /* _MCI_H_ */

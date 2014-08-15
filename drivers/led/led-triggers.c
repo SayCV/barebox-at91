@@ -124,6 +124,9 @@ int led_set_trigger(enum led_trigger trigger, struct led *led)
 
 	triggers[trigger].led = led;
 
+	if (led && trigger == LED_TRIGGER_DEFAULT_ON)
+		led_set(triggers[trigger].led, triggers[trigger].led->max_value);
+
 	return 0;
 }
 
@@ -142,7 +145,7 @@ int led_get_trigger(enum led_trigger trigger)
 	return led_get_number(triggers[trigger].led);
 }
 
-int trigger_init(void)
+static int trigger_init(void)
 {
 	return poller_register(&trigger_poller);
 }

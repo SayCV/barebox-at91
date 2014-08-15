@@ -7,6 +7,7 @@
 #include <common.h>
 #include <driver.h>
 #include <errno.h>
+#include <of.h>
 
 LIST_HEAD(bus_list);
 EXPORT_SYMBOL(bus_list);
@@ -45,4 +46,65 @@ int bus_register(struct bus_type *bus)
 	list_add_tail(&bus->list, &bus_list);
 
 	return 0;
+}
+
+int device_match(struct device_d *dev, struct driver_d *drv)
+{
+	if (IS_ENABLED(CONFIG_OFDEVICE) && dev->device_node &&
+	    drv->of_compatible)
+		return of_match(dev, drv);
+
+	if (!strcmp(dev->name, drv->name))
+		return 0;
+
+	if (drv->id_table) {
+		struct platform_device_id *id = drv->id_table;
+
+		while (id->name) {
+			if (!strcmp(id->name, dev->name)) {
+				dev->id_entry = id;
+				return 0;
+			}
+			id++;
+		}
+	}
+
+	return -1;
+}
+
+int device_match_of_modalias(struct device_d *dev, struct driver_d *drv)
+{
+	struct platform_device_id *id = drv->id_table;
+	const char *of_modalias = NULL, *p;
+	int cplen;
+	const char *compat;
+
+	if (!device_match(dev, drv))
+		return 0;
+
+	if (!id || !IS_ENABLED(CONFIG_OFDEVICE) || !dev->device_node)
+		return -1;
+
+	compat = of_get_property(dev->device_node, "compatible", &cplen);
+	if (!compat)
+		return -1;
+
+	p = strchr(compat, ',');
+	of_modalias = p ? p + 1 : compat;
+
+	while (id->name) {
+		if (!strcmp(id->name, dev->name)) {
+			dev->id_entry = id;
+			return 0;
+		}
+
+		if (of_modalias && !strcmp(id->name, of_modalias)) {
+			dev->id_entry = id;
+			return 0;
+		}
+
+		id++;
+	}
+
+	return -1;
 }

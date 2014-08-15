@@ -20,6 +20,7 @@
 #include <mach/generic.h>
 #include <init.h>
 #include <io.h>
+#include <mach/generic.h>
 
 static int imx27_silicon_revision(void)
 {
@@ -96,11 +97,18 @@ static void imx27_init_max(void)
 	writel(val, max_base + MAX_SLAVE_PORT2_OFFSET + MAX_SLAVE_AMPR_OFFSET);
 }
 
-static int imx27_init(void)
+int imx27_init(void)
 {
 	imx27_silicon_revision();
 	imx27_boot_save_loc((void *)MX27_SYSCTRL_BASE_ADDR);
+	add_generic_device("imx27-esdctl", DEVICE_ID_SINGLE, NULL,
+			   MX27_ESDCTL_BASE_ADDR, 0x1000, IORESOURCE_MEM, NULL);
 
+	return 0;
+}
+
+int imx27_devices_init(void)
+{
 	imx_iomuxv1_init((void *)MX27_GPIO1_BASE_ADDR);
 
 	add_generic_device("imx_iim", DEVICE_ID_SINGLE, NULL,
@@ -118,10 +126,7 @@ static int imx27_init(void)
 	add_generic_device("imx1-gpio", 4, NULL, MX27_GPIO5_BASE_ADDR, 0x100, IORESOURCE_MEM, NULL);
 	add_generic_device("imx1-gpio", 5, NULL, MX27_GPIO6_BASE_ADDR, 0x100, IORESOURCE_MEM, NULL);
 	add_generic_device("imx21-wdt", 0, NULL, MX27_WDOG_BASE_ADDR, 0x1000, IORESOURCE_MEM, NULL);
-	add_generic_device("imx27-esdctl", DEVICE_ID_SINGLE, NULL,
-			   MX27_ESDCTL_BASE_ADDR, 0x1000, IORESOURCE_MEM, NULL);
 	add_generic_device("imx27-usb-misc", 0, NULL, MX27_USB_OTG_BASE_ADDR + 0x600, 0x100, IORESOURCE_MEM, NULL);
 
 	return 0;
 }
-postcore_initcall(imx27_init);

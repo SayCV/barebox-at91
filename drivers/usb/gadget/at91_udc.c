@@ -414,6 +414,8 @@ static int at91_ep_queue(struct usb_ep *_ep,
 	req = container_of(_req, struct at91_request, req);
 	ep = container_of(_ep, struct at91_ep, ep);
 
+	udc = ep->udc;
+
 	if (!_req || !_req->complete
 			|| !_req->buf || !list_empty(&req->queue)) {
 		DBG(udc, "invalid request\n");
@@ -424,8 +426,6 @@ static int at91_ep_queue(struct usb_ep *_ep,
 		DBG(udc, "invalid ep\n");
 		return -EINVAL;
 	}
-
-	udc = ep->udc;
 
 	if (!udc || !udc->driver || udc->gadget.speed == USB_SPEED_UNKNOWN) {
 		DBG(udc, "invalid device\n");
@@ -748,20 +748,6 @@ static int at91_set_selfpowered(struct usb_gadget *gadget, int is_on)
 	udc->selfpowered = (is_on != 0);
 	return 0;
 }
-
-static const struct usb_gadget_ops at91_udc_ops = {
-	.get_frame		= at91_get_frame,
-	.wakeup			= at91_wakeup,
-	.set_selfpowered	= at91_set_selfpowered,
-	.vbus_session		= at91_vbus_session,
-	.pullup			= at91_pullup,
-
-	/*
-	 * VBUS-powered devices may also also want to support bigger
-	 * power budgets after an appropriate SET_CONFIGURATION.
-	 */
-	/* .vbus_power		= at91_vbus_power, */
-};
 
 /*-------------------------------------------------------------------------*/
 
@@ -1244,6 +1230,49 @@ static void at91_udc_irq (void *_udc)
 	}
 }
 
+static int at91_udc_start(struct usb_gadget *gadget, struct usb_gadget_driver *driver)
+{
+	struct at91_udc	*udc = container_of(gadget, struct at91_udc, gadget);
+
+	if (!udc->iclk)
+		return -ENODEV;
+
+	udc->driver = driver;
+	udc->enabled = 1;
+	udc->selfpowered = 1;
+
+	DBG(udc, "bound to %s\n", driver->function);
+	return 0;
+}
+
+static int at91_udc_stop(struct usb_gadget *gadget, struct usb_gadget_driver *driver)
+{
+	struct at91_udc	*udc = container_of(gadget, struct at91_udc, gadget);
+
+	udc->enabled = 0;
+	at91_udp_write(udc, AT91_UDP_IDR, ~0);
+	udc->driver = NULL;
+
+	DBG(udc, "unbound from %s\n", driver->function);
+	return 0;
+}
+
+static const struct usb_gadget_ops at91_udc_ops = {
+	.get_frame		= at91_get_frame,
+	.wakeup			= at91_wakeup,
+	.set_selfpowered	= at91_set_selfpowered,
+	.vbus_session		= at91_vbus_session,
+	.pullup			= at91_pullup,
+
+	/*
+	 * VBUS-powered devices may also also want to support bigger
+	 * power budgets after an appropriate SET_CONFIGURATION.
+	 */
+	/* .vbus_power		= at91_vbus_power, */
+	.udc_start		= at91_udc_start,
+	.udc_stop		= at91_udc_stop,
+};
+
 /*-------------------------------------------------------------------------*/
 
 static struct at91_udc controller = {
@@ -1327,15 +1356,17 @@ int usb_gadget_poll(void)
 	u32 value;
 
 	if (!udc->udp_baseaddr)
-		return 0;
+		return -ENODEV;
 
-	value = gpio_get_value(udc->board.vbus_pin);
-	value ^= udc->board.vbus_active_low;
+	if (gpio_is_valid(udc->board.vbus_pin)) {
+		value = gpio_get_value(udc->board.vbus_pin);
+		value ^= udc->board.vbus_active_low;
 
-	udc->gpio_vbus_val = value;
+		udc->gpio_vbus_val = value;
 
-	if (!value)
-		return 0;
+		if (!value)
+			return 0;
+	}
 
 	value = at91_udp_read(udc, AT91_UDP_ISR) & (~(AT91_UDP_SOFINT));
 	if (value)
@@ -1343,66 +1374,6 @@ int usb_gadget_poll(void)
 
 	return value;
 }
-
-int usb_gadget_register_driver(struct usb_gadget_driver *driver)
-{
-	struct at91_udc	*udc = &controller;
-	int		retval;
-
-	if (!udc->iclk)
-		return -ENODEV;
-
-	if (!driver
-			|| driver->speed < USB_SPEED_FULL
-			|| !driver->bind
-			|| !driver->setup) {
-		DBG(udc, "bad parameter.\n");
-		return -EINVAL;
-	}
-
-	if (udc->driver) {
-		DBG(udc, "UDC already has a gadget driver\n");
-		return -EBUSY;
-	}
-
-	udc->driver = driver;
-	udc->enabled = 1;
-	udc->selfpowered = 1;
-
-	retval = driver->bind(&udc->gadget);
-	if (retval) {
-		DBG(udc, "bind() returned %d\n", retval);
-		udc->driver = NULL;
-		udc->enabled = 0;
-		udc->selfpowered = 0;
-		return retval;
-	}
-
-	pullup(udc, 1);
-
-	DBG(udc, "bound to %s\n", driver->function);
-	return 0;
-}
-EXPORT_SYMBOL (usb_gadget_register_driver);
-
-int usb_gadget_unregister_driver (struct usb_gadget_driver *driver)
-{
-	struct at91_udc *udc = &controller;
-
-	if (!driver || driver != udc->driver || !driver->unbind)
-		return -EINVAL;
-
-	udc->enabled = 0;
-	at91_udp_write(udc, AT91_UDP_IDR, ~0);
-	pullup(udc, 0);
-
-	driver->unbind(&udc->gadget);
-	udc->driver = NULL;
-
-	DBG(udc, "unbound from %s\n", driver->function);
-	return 0;
-}
-EXPORT_SYMBOL (usb_gadget_unregister_driver);
 
 /*-------------------------------------------------------------------------*/
 
@@ -1417,7 +1388,7 @@ static struct poller_struct poller = {
 
 static int __init at91udc_probe(struct device_d *dev)
 {
-	struct at91_udc	*udc;
+	struct at91_udc	*udc = &controller;
 	int		retval;
 
 	if (!dev->platform_data) {
@@ -1427,7 +1398,6 @@ static int __init at91udc_probe(struct device_d *dev)
 	}
 
 	/* init software state */
-	udc = &controller;
 	udc->dev = dev;
 	udc->board = *(struct at91_udc_data *) dev->platform_data;
 	udc->enabled = 0;
@@ -1502,15 +1472,19 @@ static int __init at91udc_probe(struct device_d *dev)
 		udc->vbus = gpio_get_value(udc->board.vbus_pin);
 		DBG(udc, "VBUS detection: host:%s \n",
 			udc->vbus ? "present":"absent");
+
+		dev_add_param_bool(dev, "vbus",
+			at91_udc_vbus_set, NULL, &udc->gpio_vbus_val, udc);
 	} else {
 		DBG(udc, "no VBUS detection, assuming always-on\n");
 		udc->vbus = 1;
 	}
 
-	dev_add_param_bool(dev, "vbus",
-			at91_udc_vbus_set, NULL, &udc->gpio_vbus_val, udc);
-
 	poller_register(&poller);
+
+	retval = usb_add_gadget_udc_release(dev, &udc->gadget, NULL);
+	if (retval)
+		goto fail0a;
 
 	INFO(udc, "%s version %s\n", driver_name, DRIVER_VERSION);
 	return 0;

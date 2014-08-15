@@ -22,6 +22,7 @@
 #include <malloc.h>
 #include <errno.h>
 #include <libbb.h>
+#include <libfile.h>
 #include <uncompress.h>
 #include <fcntl.h>
 #include <fs.h>
@@ -29,17 +30,10 @@
 #include <filetype.h>
 #include <memory.h>
 
-#ifdef CONFIG_UIMAGE_MULTI
 static inline int uimage_is_multi_image(struct uimage_handle *handle)
 {
 	return (handle->header.ih_type == IH_TYPE_MULTI) ? 1 : 0;
 }
-#else
-static inline int uimage_is_multi_image(struct uimage_handle *handle)
-{
-	return 0;
-}
-#endif
 
 void uimage_print_contents(struct uimage_handle *handle)
 {
@@ -81,7 +75,7 @@ void uimage_print_contents(struct uimage_handle *handle)
 }
 EXPORT_SYMBOL(uimage_print_contents);
 
-size_t uimage_get_size(struct uimage_handle *handle, unsigned int image_no)
+ssize_t uimage_get_size(struct uimage_handle *handle, unsigned int image_no)
 {
 	if (image_no >= handle->nb_data_entries)
 		return -EINVAL;
@@ -360,7 +354,9 @@ static int uimage_sdram_flush(void *buf, unsigned int len)
 		uimage_resource = request_sdram_region("uimage",
 				start, size);
 		if (!uimage_resource) {
-			printf("unable to request SDRAM 0x%08x-0x%08x\n",
+			printf("unable to request SDRAM "
+					PRINTF_CONVERSION_RESOURCE "-"
+					PRINTF_CONVERSION_RESOURCE "\n",
 				start, start + size - 1);
 			return -ENOMEM;
 		}
@@ -380,7 +376,7 @@ struct resource *file_to_sdram(const char *filename, unsigned long adr)
 	struct resource *res;
 	size_t size = BUFSIZ;
 	size_t ofs = 0;
-	size_t now;
+	ssize_t now;
 	int fd;
 
 	fd = open(filename, O_RDONLY);
@@ -427,7 +423,7 @@ struct resource *uimage_load_to_sdram(struct uimage_handle *handle,
 		int image_no, unsigned long load_address)
 {
 	int ret;
-	size_t size;
+	ssize_t size;
 	resource_size_t start = (resource_size_t)load_address;
 
 	uimage_buf = (void *)load_address;
@@ -486,6 +482,7 @@ void *uimage_load_to_buf(struct uimage_handle *handle, int image_no,
 			free(buf);
 			return NULL;
 		}
+		size = ihd->len;
 		goto out;
 	}
 

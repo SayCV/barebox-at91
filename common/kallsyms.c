@@ -3,8 +3,6 @@
 #include <kallsyms.h>
 #include <asm/sections.h>
 
-#ifndef DOXYGEN_SHOULD_SKIP_THIS
-
 /* These will be re-linked against their real values during the second link stage */
 extern const unsigned long kallsyms_addresses[] __attribute__((weak));
 extern const unsigned long kallsyms_num_syms __attribute__((weak));
@@ -14,8 +12,6 @@ extern const u8 kallsyms_token_table[] __attribute__((weak));
 extern const u16 kallsyms_token_index[] __attribute__((weak));
 
 extern const unsigned long kallsyms_markers[] __attribute__((weak));
-
-#endif /* DOXYGEN_SHOULD_SKIP_THIS */
 
 static inline int is_kernel_text(unsigned long addr)
 {
@@ -167,10 +163,10 @@ static unsigned long get_symbol_pos(unsigned long addr,
  *   It resides in a module.
  * - We also guarantee that modname will be valid until rescheduled.
  */
-const char *kallsyms_lookup(unsigned long addr,
-			    unsigned long *symbolsize,
-			    unsigned long *offset,
-			    char **modname, char *namebuf)
+static const char *kallsyms_lookup(unsigned long addr,
+				   unsigned long *symbolsize,
+				   unsigned long *offset,
+				   char **modname, char *namebuf)
 {
 	namebuf[KSYM_NAME_LEN - 1] = 0;
 	namebuf[0] = 0;

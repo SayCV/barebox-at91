@@ -21,8 +21,68 @@
 #include <common.h>
 #include <fs.h>
 #include <errno.h>
+#include <console.h>
+#include <init.h>
+#include <environment.h>
+#include <globalvar.h>
+#include <magicvar.h>
+#include <password.h>
 
 #ifndef CONFIG_CONSOLE_NONE
+
+static int console_input_allow;
+
+static int console_global_init(void)
+{
+	if (IS_ENABLED(CONFIG_CMD_LOGIN) && is_passwd_enable())
+		console_input_allow = 0;
+	else
+		console_input_allow = 1;
+
+	globalvar_add_simple_bool("console.input_allow", &console_input_allow);
+
+	return 0;
+}
+late_initcall(console_global_init);
+
+BAREBOX_MAGICVAR_NAMED(global_console_input_allow, global.console.input_allow, "console input allowed");
+
+bool console_is_input_allow(void)
+{
+	return console_input_allow;
+}
+
+void console_allow_input(bool val)
+{
+	console_input_allow = val;
+}
+
+int barebox_loglevel = CONFIG_DEFAULT_LOGLEVEL;
+
+int pr_print(int level, const char *fmt, ...)
+{
+	va_list args;
+	uint i;
+	char printbuffer[CFG_PBSIZE];
+
+	if (level > barebox_loglevel)
+		return 0;
+
+	va_start(args, fmt);
+	i = vsprintf(printbuffer, fmt, args);
+	va_end(args);
+
+	/* Print the string */
+	puts(printbuffer);
+
+	return i;
+}
+
+static int loglevel_init(void)
+{
+	return globalvar_add_simple_int("loglevel", &barebox_loglevel, "%d");
+}
+device_initcall(loglevel_init);
 
 int printf(const char *fmt, ...)
 {
@@ -108,3 +168,38 @@ int fputc(int fd, char c)
 	return 0;
 }
 EXPORT_SYMBOL(fputc);
+
+struct console_device *console_get_by_dev(struct device_d *dev)
+{
+	struct console_device *cdev;
+
+	for_each_console(cdev) {
+		if (cdev->dev == dev)
+			return cdev;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(console_get_by_dev);
+
+/*
+ * @brief returns current used console device
+ *
+ * @return console device which is registered with CONSOLE_STDIN and
+ * CONSOLE_STDOUT
+ */
+struct console_device *console_get_first_active(void)
+{
+	struct console_device *cdev;
+	/*
+	 * Assumption to have BOTH CONSOLE_STDIN AND STDOUT in the
+	 * same output console
+	 */
+	for_each_console(cdev) {
+		if ((cdev->f_active & (CONSOLE_STDIN | CONSOLE_STDOUT)))
+			return cdev;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(console_get_first_active);

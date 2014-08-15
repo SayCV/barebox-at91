@@ -11,6 +11,7 @@
 #include <sizes.h>
 #include <errno.h>
 #include <malloc.h>
+#include <libfile.h>
 #include <bootstrap.h>
 
 void* bootstrap_read_disk(char *dev, char *fstype)
@@ -20,7 +21,7 @@ void* bootstrap_read_disk(char *dev, char *fstype)
 	int len;
 	char *path = "/";
 
-	ret = mount(dev, fstype, path);
+	ret = mount(dev, fstype, path, NULL);
 	if (ret) {
 		bootstrap_err("mounting %s failed with %d\n", dev, ret);
 		return NULL;

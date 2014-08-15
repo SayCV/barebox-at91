@@ -36,69 +36,44 @@
 #include <getopt.h>
 #include <linux/stat.h>
 #include <xfuncs.h>
+#include <net.h>
 #include <linux/mii.h>
-
-#define MII_BASIC_MAX	(MII_STAT1000 + 1)
-
-static u16 mdio_read(int fd, int offset)
-{
-	int ret;
-	u16 buf;
-
-	ret = lseek(fd, offset << 1, SEEK_SET);
-	if (ret < 0)
-		return 0;
-
-	ret = read(fd, &buf, sizeof(u16));
-	if (ret < 0)
-		return 0;
-
-	return buf;
-}
-
-/* Table of known MII's */
-static const struct {
-	u_short	id1, id2;
-	u_short	mask1, mask2;
-	char	*name;
-} mii_id[] = {
-	{ 0x0013, 0x78e0, 0xffff, 0xfff0, "Level One LXT971A" },
-};
-#define NMII (sizeof(mii_id)/sizeof(mii_id[0]))
+#include <linux/phy.h>
+#include <linux/err.h>
 
 const struct {
 	char	*name;
 	u_short	value[2];
 } media[] = {
 	/* The order through 100baseT4 matches bits in the BMSR */
-	{ "10baseT-HD",		{ADVERTISE_10HALF} },
-	{ "10baseT-FD",		{ADVERTISE_10FULL} },
+	{ "10baseT-HD",	{ADVERTISE_10HALF} },
+	{ "10baseT-FD",	{ADVERTISE_10FULL} },
 	{ "100baseTx-HD",	{ADVERTISE_100HALF} },
 	{ "100baseTx-FD",	{ADVERTISE_100FULL} },
-	{ "100baseT4",		{LPA_100BASE4} },
-	{ "100baseTx",		{ADVERTISE_100FULL | ADVERTISE_100HALF} },
-	{ "10baseT",		{ADVERTISE_10FULL | ADVERTISE_10HALF} },
-
-	{ "1000baseT-HD",	{0, ADVERTISE_1000XHALF} },
-	{ "1000baseT-FD",	{0, ADVERTISE_1000XFULL} },
-	{ "1000baseT",		{0, ADVERTISE_1000XHALF | ADVERTISE_1000XFULL} },
+	{ "100baseT4",	{LPA_100BASE4} },
+	{ "100baseTx",	{ADVERTISE_100FULL | ADVERTISE_100HALF} },
+	{ "10baseT",	{ADVERTISE_10FULL | ADVERTISE_10HALF} },
+	{ "1000baseT-HD",	{0, ADVERTISE_1000HALF} },
+	{ "1000baseT-FD",	{0, ADVERTISE_1000FULL} },
+	{ "1000baseT",	{0, ADVERTISE_1000HALF | ADVERTISE_1000FULL} },
 };
 #define NMEDIA (sizeof(media)/sizeof(media[0]))
 
-static char *media_list(unsigned mask, unsigned mask2, int best)
+static const char *media_list(unsigned mask, unsigned mask2, int best)
 {
-	static char buf[100];
+	static char buf[256];
 	int i;
 
 	*buf = '\0';
 
-	if (mask & BMCR_SPEED1000) {
+	if (mask2) {
 		if (mask2 & ADVERTISE_1000FULL) {
 			strcat(buf, " ");
 			strcat(buf, "1000baseT-FD");
 			if (best)
 				goto out;
 		}
+
 		if (mask2 & ADVERTISE_1000HALF) {
 			strcat(buf, " ");
 			strcat(buf, "1000baseT-HD");
@@ -116,6 +91,7 @@ static char *media_list(unsigned mask, unsigned mask2, int best)
 				break;
 		}
 	}
+
 out:
 	if (mask & (1 << 5))
 		strcat(buf, " flow-control");
@@ -123,19 +99,26 @@ out:
 	return buf;
 }
 
-static int show_basic_mii(int fd, int verbose)
+static int show_basic_mii(struct mii_bus *mii, struct phy_device *phydev,
+	int verbose)
 {
 	char buf[100];
 	int i, mii_val[32];
-	unsigned bmcr, bmsr, advert, lkpar, bmcr2, lpa2;
+	unsigned bmcr, bmsr, advert, lkpar, bmcr2 = 0, lpa2 = 0;
+	struct phy_driver *phydrv;
+	int is_phy_gbit;
 
 	/* Some bits in the BMSR are latched, but we can't rely on being
 	   the only reader, so only the current values are meaningful */
-	mdio_read(fd, MII_BMSR);
-	for (i = 0; i < ((verbose > 1) ? 32 : MII_BASIC_MAX); i++)
-		mii_val[i] = mdio_read(fd, i);
+	mii->read(mii, phydev->addr, MII_BMSR);
 
-	if (mii_val[MII_BMCR] == 0xffff  || mii_val[MII_BMSR] == 0x0000) {
+	for (i = 0; i < 32; i++)
+		mii_val[i] = mii->read(mii, phydev->addr, i);
+
+	printf("%s: %s%d: ", phydev->cdev.name,
+		mii->parent->name, mii->parent->id);
+
+	if (mii_val[MII_BMCR] == 0xffff || mii_val[MII_BMSR] == 0x0000) {
 		fprintf(stderr, "  No MII transceiver present!.\n");
 		return -1;
 	}
@@ -145,8 +128,15 @@ static int show_basic_mii(int fd, int verbose)
 	bmsr = mii_val[MII_BMSR];
 	advert = mii_val[MII_ADVERTISE];
 	lkpar = mii_val[MII_LPA];
-	bmcr2 = mii_val[MII_CTRL1000];
-	lpa2 = mii_val[MII_STAT1000];
+
+	phydrv = to_phy_driver(phydev->dev.driver);
+	is_phy_gbit = phydrv->features &
+		(SUPPORTED_1000baseT_Half | SUPPORTED_1000baseT_Full);
+
+	if (is_phy_gbit) {
+		bmcr2 = mii_val[MII_CTRL1000];
+		lpa2 = mii_val[MII_STAT1000];
+	}
 
 	*buf = '\0';
 	if (bmcr & BMCR_ANENABLE) {
@@ -154,7 +144,8 @@ static int show_basic_mii(int fd, int verbose)
 			if (advert & lkpar) {
 				sprintf(buf, "%s%s, ", (lkpar & LPA_LPACK) ?
 					"negotiated" : "no autonegotiation,",
-					media_list(advert & lkpar, bmcr2 & lpa2 >> 2, 1));
+					media_list(advert & lkpar,
+						bmcr2 & lpa2 >> 2, 1));
 			} else {
 				sprintf(buf, "autonegotiation failed, ");
 			}
@@ -162,9 +153,13 @@ static int show_basic_mii(int fd, int verbose)
 			sprintf(buf, "autonegotiation restarted, ");
 		}
 	} else {
+		int speed1000;
+
+		speed1000 = ((bmcr2
+				& (ADVERTISE_1000HALF
+				| ADVERTISE_1000FULL)) & lpa2 >> 2);
 		sprintf(buf, "%s Mbit, %s duplex, ",
-			((bmcr2 & (ADVERTISE_1000HALF | ADVERTISE_1000FULL)) & lpa2 >> 2)
-			? "1000"
+			speed1000 ? "1000"
 			: (bmcr & BMCR_SPEED100) ? "100" : "10",
 			(bmcr & BMCR_FULLDPLX) ? "full" : "half");
 	}
@@ -183,20 +178,11 @@ static int show_basic_mii(int fd, int verbose)
 	}
 
 	if (verbose) {
-		printf("  product info: ");
-		for (i = 0; i < NMII; i++)
-			if ((mii_id[i].id1 == (mii_val[2] & mii_id[i].mask1)) &&
-				(mii_id[i].id2 ==
-					(mii_val[3] & mii_id[i].mask2)))
-				break;
-
-		if (i < NMII)
-			printf("%s rev %d\n", mii_id[i].name, mii_val[3]&0x0f);
-		else
-			printf("vendor %02x:%02x:%02x, model %d rev %d\n",
-				mii_val[2] >> 10, (mii_val[2] >> 2) & 0xff,
-				((mii_val[2] << 6)|(mii_val[3] >> 10)) & 0xff,
-				(mii_val[3] >> 4) & 0x3f, mii_val[3] & 0x0f);
+		printf("  product info: %s ", phydrv->drv.name);
+		printf("(vendor %02x:%02x:%02x, model %d rev %d)\n",
+			mii_val[2] >> 10, (mii_val[2] >> 2) & 0xff,
+			((mii_val[2] << 6) | (mii_val[3] >> 10)) & 0xff,
+			(mii_val[3] >> 4) & 0x3f, mii_val[3] & 0x0f);
 
 		printf("  basic mode:   ");
 		if (bmcr & BMCR_RESET)
@@ -223,26 +209,53 @@ static int show_basic_mii(int fd, int verbose)
 			printf("remote fault, ");
 		printf((bmsr & BMSR_LSTATUS) ? "link ok" : "no link");
 		printf("\n  capabilities:%s", media_list(bmsr >> 6, bmcr2, 0));
-		printf("\n  advertising: %s", media_list(advert, lpa2 >> 2, 0));
+		printf("\n  advertising: %s", media_list(advert, bmcr2, 0));
 
 #define LPA_ABILITY_MASK	(LPA_10HALF | LPA_10FULL \
 				| LPA_100HALF | LPA_100FULL \
 				| LPA_100BASE4 | LPA_PAUSE_CAP)
 
 		if (lkpar & LPA_ABILITY_MASK)
-			printf("\n  link partner:%s", media_list(lkpar, bmcr2, 0));
+			printf("\n  link partner:%s",
+				media_list(lkpar, lpa2 >> 2, 0));
 		printf("\n");
 	}
 
 	return 0;
 }
 
+static void mdiobus_show(struct device_d *dev, char *phydevname, int verbose)
+{
+	struct mii_bus *mii = to_mii_bus(dev);
+	int i;
+
+	for (i = 0; i < PHY_MAX_ADDR; i++) {
+		struct phy_device *phydev;
+
+		phydev = mdiobus_scan(mii, i);
+		if (IS_ERR(phydev))
+			continue;
+		if (phydev->registered) {
+
+			show_basic_mii(mii, phydev, verbose);
+
+			if (phydevname &&
+				!strcmp(phydev->cdev.name, phydevname)) {
+				return;
+			}
+		}
+
+	}
+
+	return;
+}
+
 static int do_miitool(int argc, char *argv[])
 {
-	char *filename;
+	char *phydevname;
+	struct mii_bus *mii;
 	int opt;
 	int argc_min;
-	int fd;
 	int verbose;
 
 	verbose = 0;
@@ -258,37 +271,32 @@ static int do_miitool(int argc, char *argv[])
 
 	argc_min = optind + 1;
 
-	if (argc < argc_min)
-		return COMMAND_ERROR_USAGE;
-
-	filename = argv[optind];
-
-	fd = open(filename, O_RDONLY);
-	if (fd < 0) {
-		printf("unable to read %s\n", filename);
-		return COMMAND_ERROR;
+	phydevname = NULL;
+	if (argc >= argc_min) {
+		phydevname = argv[optind];
 	}
 
-	show_basic_mii(fd, verbose);
-
-	close(fd);
+	for_each_mii_bus(mii) {
+		mdiobus_detect(&mii->dev);
+		mdiobus_show(&mii->dev, phydevname, verbose);
+	}
 
 	return COMMAND_SUCCESS;
 }
 
 BAREBOX_CMD_HELP_START(miitool)
-BAREBOX_CMD_HELP_USAGE("miitool [[[-v] -v] -v] <phy>\n")
-BAREBOX_CMD_HELP_SHORT("view status for MII <phy>.\n")
+BAREBOX_CMD_HELP_TEXT("This utility checks or sets the status of a network interface's")
+BAREBOX_CMD_HELP_TEXT("Media Independent Interface (MII) unit. Most fast ethernet")
+BAREBOX_CMD_HELP_TEXT("adapters use an MII to autonegotiate link speed and duplex setting.")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT("-v", "increase verbosity")
 BAREBOX_CMD_HELP_END
 
-/**
- * @page miitool_command
-This utility checks or sets the status of a network interface's
-Media Independent Interface (MII) unit. Most fast ethernet
-adapters use an MII to autonegotiate link speed and duplex setting.
- */
 BAREBOX_CMD_START(miitool)
 	.cmd		= do_miitool,
-	.usage		= "view media-independent interface status",
+	BAREBOX_CMD_DESC("view media-independent interface status")
+	BAREBOX_CMD_OPTS("[-v] PHY")
+	BAREBOX_CMD_GROUP(CMD_GRP_NET)
 	BAREBOX_CMD_HELP(cmd_miitool_help)
 BAREBOX_CMD_END

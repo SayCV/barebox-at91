@@ -23,24 +23,21 @@
 
 static int do_umount(int argc, char *argv[])
 {
-	int ret = 0;
-
 	if (argc != 2)
 		return COMMAND_ERROR_USAGE;
 
-	if ((ret = umount(argv[1]))) {
-		perror("umount");
-		return 1;
-	}
-	return 0;
+	return umount(argv[1]);
 }
 
-static const __maybe_unused char cmd_umount_help[] =
-"Usage: umount <mountpoint>\n"
-"umount a filesystem mounted on a specific mountpoint\n";
+
+BAREBOX_CMD_HELP_START(umount)
+BAREBOX_CMD_HELP_TEXT("Unmount a filesystem mounted on a specific MOINTPOINT")
+BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(umount)
 	.cmd		= do_umount,
-	.usage		= "umount a filesystem",
+	BAREBOX_CMD_DESC("umount a filesystem")
+	BAREBOX_CMD_OPTS("MOUNTPOINT")
+	BAREBOX_CMD_GROUP(CMD_GRP_PART)
 	BAREBOX_CMD_HELP(cmd_umount_help)
 BAREBOX_CMD_END

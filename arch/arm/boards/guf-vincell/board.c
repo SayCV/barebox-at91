@@ -259,9 +259,6 @@ static struct imx_nand_platform_data nand_info = {
 	.flash_bbt	= 1,
 };
 
-static struct imx_dcd_v2_entry __dcd_entry_section dcd_entry[] = {
-};
-
 static struct i2c_board_info i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("da9053", 0x48),
@@ -285,7 +282,6 @@ static int vincell_devices_init(void)
 
 	vincell_fec_reset();
 
-	armlinux_set_bootparams((void *)0x70000100);
 	armlinux_set_architecture(3297);
 
 	devfs_add_partition("nand0", SZ_1M, SZ_512K, DEVFS_PARTITION_FIXED, "self_raw");
@@ -294,7 +290,7 @@ static int vincell_devices_init(void)
 	dev_add_bb_dev("env_raw", "env0");
 
 	imx53_bbu_internal_nand_register_handler("nand",
-		BBU_HANDLER_FLAG_DEFAULT, dcd_entry, sizeof(dcd_entry), 3 * SZ_128K, 0xf8020000);
+		BBU_HANDLER_FLAG_DEFAULT, 3 * SZ_128K);
 
 	return 0;
 }
@@ -313,6 +309,9 @@ late_initcall(vincell_part_init);
 static int vincell_console_init(void)
 {
 	mxc_iomux_v3_setup_multiple_pads(vincell_pads, ARRAY_SIZE(vincell_pads));
+
+	barebox_set_model("Garz & Fricke VINCELL");
+	barebox_set_hostname("vincell");
 
 	imx53_add_uart1();
 

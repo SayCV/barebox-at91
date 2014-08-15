@@ -24,7 +24,7 @@
 #include <mach/imx27-regs.h>
 #include <fec.h>
 #include <notifier.h>
-#include <mach/gpio.h>
+#include <gpio.h>
 #include <asm/armlinux.h>
 #include <asm/sections.h>
 #include <asm/barebox-arm.h>
@@ -198,7 +198,6 @@ static int eukrea_cpuimx27_devices_init(void)
 	gpio_set_value(GPIO_PORTA | 25, 1);
 #endif
 
-	armlinux_set_bootparams((void *)0xa0000100);
 	armlinux_set_architecture(MACH_TYPE_EUKREA_CPUIMX27);
 
 	return 0;
@@ -209,6 +208,9 @@ device_initcall(eukrea_cpuimx27_devices_init);
 static int eukrea_cpuimx27_console_init(void)
 {
 	uint32_t val;
+
+	barebox_set_model("Eukrea CPUIMX27");
+	barebox_set_hostname("eukrea-cpuimx27");
 
 #ifdef CONFIG_DRIVER_SERIAL_IMX
 	imx27_add_uart0();
@@ -221,7 +223,8 @@ static int eukrea_cpuimx27_console_init(void)
 	imx27_setup_weimcs(3, 0x0000D603, 0x0D1D0D01, 0x00D20000);
 #ifdef CONFIG_DRIVER_SERIAL_NS16550
 	add_ns16550_device(DEVICE_ID_DYNAMIC, MX27_CS3_BASE_ADDR + QUART_OFFSET, 0xf,
-			 IORESOURCE_MEM_16BIT, &quad_uart_serial_plat);
+			   IORESOURCE_MEM | IORESOURCE_MEM_16BIT,
+			   &quad_uart_serial_plat);
 #endif
 	return 0;
 }

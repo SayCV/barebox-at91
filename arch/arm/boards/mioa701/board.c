@@ -68,7 +68,7 @@ static void mioa701_lcd_power(int on)
 
 static void mioa701_lcd_backlight(int on)
 {
-	struct pwm_device *pwm0 = pwm_request("pxa_pwm0");
+	struct pwm_device *pwm0 = pwm_request("pwm0");
 
 	/*
 	 * The backlight has a base frequency of 250kHz (<=> 4 ms).
@@ -125,7 +125,6 @@ static int mioa701_devices_init(void)
 	docg3_iospace = map_io_sections(0x0, (void *)0xe0000000, 0x2000);
 	add_generic_device("docg3", DEVICE_ID_DYNAMIC, NULL, (ulong) docg3_iospace,
 			0x2000, IORESOURCE_MEM, NULL);
-	armlinux_set_bootparams((void *)0xa0000100);
 	armlinux_set_architecture(MACH_TYPE_MIOA701);
 
 	for (i = 0; i < ARRAY_SIZE(leds); i++)
@@ -266,6 +265,7 @@ static int mioa701_coredevice_init(void)
 	 * This requires to command the Maxim 1586 to upgrade core voltage to
 	 * 1.475 V, on the power I2C bus (device 0x14).
 	 */
+	CKEN |= CKEN_PWRI2C;
 	CCCR = CCCR_A | 0x20290;
 	PCFR = PCFR_GPR_EN | PCFR_FVC | PCFR_DC_EN | PCFR_PI2C_EN | PCFR_OPDE;
 	PCMD(0) = PCMD_LC | 0x1f;
@@ -274,6 +274,9 @@ static int mioa701_coredevice_init(void)
 	cclk = 0x0b;
 	asm volatile("mcr p14, 0, %0, c6, c0, 0 @ set CCLK"
 	  : : "r" (cclk) : "cc");
+
+	barebox_set_model("Scoter Mitac Mio A701");
+	barebox_set_hostname("mioa701");
 
 	return 0;
 }

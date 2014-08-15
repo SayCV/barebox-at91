@@ -15,12 +15,12 @@ static int do_ubimkvol(int argc, char *argv[])
 {
 	struct ubi_mkvol_req req;
 	int fd, ret;
-	size_t size;
+	uint64_t size;
 
 	if (argc != 4)
 		return COMMAND_ERROR_USAGE;
 
-	size = strtoul_suffix(argv[3], NULL, 0);
+	size = strtoull_suffix(argv[3], NULL, 0);
 	req.name_len = min_t(int, strlen(argv[2]), UBI_VOL_NAME_MAX);
 	strncpy(req.name, argv[2], req.name_len);
 	req.name[req.name_len] = 0;
@@ -44,52 +44,98 @@ static int do_ubimkvol(int argc, char *argv[])
 	return ret ? 1 : 0;
 }
 
-static const __maybe_unused char cmd_ubimkvol_help[] =
-"Usage: ubimkvol <ubidev> <name> <size>\n"
-"Create an ubi volume on <ubidev> with name <name> and size <size>\n"
-"If size is zero all available space is used for the volume\n";
+
+BAREBOX_CMD_HELP_START(ubimkvol)
+BAREBOX_CMD_HELP_TEXT("Create an UBI volume on UBIDEV with NAME and SIZE.")
+BAREBOX_CMD_HELP_TEXT("If SIZE is 0 all available space is used for the volume.")
+BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(ubimkvol)
 	.cmd		= do_ubimkvol,
-	.usage		= "create an ubi volume",
+	BAREBOX_CMD_DESC("create an UBI volume")
+	BAREBOX_CMD_OPTS("UBIDEV NAME SIZE")
+	BAREBOX_CMD_GROUP(CMD_GRP_PART)
 	BAREBOX_CMD_HELP(cmd_ubimkvol_help)
 BAREBOX_CMD_END
 
 
 static int do_ubiattach(int argc, char *argv[])
 {
+	int opt;
 	struct mtd_info_user user;
 	int fd, ret;
+	int vid_hdr_offset = 0;
 
-	if (argc != 2)
+	while((opt = getopt(argc, argv, "O:")) > 0) {
+		switch(opt) {
+		case 'O':
+			vid_hdr_offset = simple_strtoul(optarg, NULL, 0);
+			break;
+		default:
+			return COMMAND_ERROR_USAGE;
+		}
+	}
+
+	if (optind == argc)
 		return COMMAND_ERROR_USAGE;
 
-	fd = open(argv[1], O_RDWR);
+	fd = open(argv[optind], O_RDWR);
 	if (fd < 0) {
 		perror("open");
 		return 1;
 	}
 
 	ret = ioctl(fd, MEMGETINFO, &user);
-	if (!ret)
-		ret = ubi_attach_mtd_dev(user.mtd, UBI_DEV_NUM_AUTO, 0);
+	if (ret) {
+		printf("MEMGETINFO failed: %s\n", strerror(-ret));
+		goto err;
+	}
 
-	if (ret)
+	ret = ubi_attach_mtd_dev(user.mtd, UBI_DEV_NUM_AUTO, vid_hdr_offset, 20);
+	if (ret < 0)
 		printf("failed to attach: %s\n", strerror(-ret));
-
+	else
+		ret = 0;
+err:
 	close(fd);
 
 	return ret ? 1 : 0;
 }
 
-static const __maybe_unused char cmd_ubiattach_help[] =
-"Usage: ubiattach <mtddev>\n"
-"Attach <mtddev> to ubi\n";
+BAREBOX_CMD_HELP_START(ubiattach)
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT ("-O OFFS",  "VID header offset")
+BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(ubiattach)
 	.cmd		= do_ubiattach,
-	.usage		= "attach a mtd dev to ubi",
+	BAREBOX_CMD_DESC("attach mtd device to UBI")
+	BAREBOX_CMD_OPTS("[-O] MTDDEV")
+	BAREBOX_CMD_GROUP(CMD_GRP_PART)
 	BAREBOX_CMD_HELP(cmd_ubiattach_help)
+BAREBOX_CMD_END
+
+static int do_ubidetach(int argc, char *argv[])
+{
+	int ubi_num, ret;
+
+	if (argc != 2)
+		return COMMAND_ERROR_USAGE;
+
+	ubi_num = simple_strtoul(argv[1], NULL, 0);
+	ret = ubi_detach_mtd_dev(ubi_num, 1);
+
+	if (ret)
+		printf("failed to detach: %s\n", strerror(-ret));
+
+	return ret;
+}
+
+BAREBOX_CMD_START(ubidetach)
+	.cmd		= do_ubidetach,
+	BAREBOX_CMD_DESC("detach an UBI device")
+	BAREBOX_CMD_OPTS("UBINUM")
+	BAREBOX_CMD_GROUP(CMD_GRP_PART)
 BAREBOX_CMD_END
 
 static int do_ubirmvol(int argc, char *argv[])
@@ -117,13 +163,15 @@ static int do_ubirmvol(int argc, char *argv[])
 	return ret ? 1 : 0;
 }
 
-static const __maybe_unused char cmd_ubirmvol_help[] =
-"Usage: ubirmvol <ubidev> <name>\n"
-"Delete ubi volume <name> from <ubidev>\n";
+BAREBOX_CMD_HELP_START(ubirmvol)
+BAREBOX_CMD_HELP_TEXT("Delete UBI volume NAME from UBIDEV")
+BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(ubirmvol)
 	.cmd		= do_ubirmvol,
-	.usage		= "delete an ubi volume",
+	BAREBOX_CMD_DESC("delete an UBI volume")
+	BAREBOX_CMD_OPTS("UBIDEV NAME")
+	BAREBOX_CMD_GROUP(CMD_GRP_PART)
 	BAREBOX_CMD_HELP(cmd_ubirmvol_help)
 BAREBOX_CMD_END
 

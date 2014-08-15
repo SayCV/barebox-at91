@@ -24,7 +24,7 @@
 
 struct fdt_header *fdt = NULL;
 
-static int hb_fixup(struct device_node *root)
+static int hb_fixup(struct device_node *root, void *unused)
 {
 	struct device_node *node;
 	u32 reg = readl(sregs_base + HB_SREG_A9_PWRDOM_DATA);
@@ -35,25 +35,21 @@ static int hb_fixup(struct device_node *root)
 	__be32 latency;
 
 	if (!(reg & HB_PWRDOM_STAT_SATA)) {
-		of_tree_for_each_node(node, root) {
-			if (of_device_is_compatible(node, "calxeda,hb-ahci"))
-				of_set_property(node, "status", "disabled",
-						sizeof("disabled"), 1);
-		}
+		for_each_compatible_node(node, NULL, "calxeda,hb-ahci")
+			of_set_property(node, "status", "disabled",
+					sizeof("disabled"), 1);
 	}
 
 	if (!(reg & HB_PWRDOM_STAT_EMMC)) {
-		of_tree_for_each_node(node, root) {
-			if (of_device_is_compatible(node, "calxeda,hb-sdhci"))
-				of_set_property(node, "status", "disabled",
-						sizeof("disabled"), 1);
-		}
+		for_each_compatible_node(node, NULL, "calxeda,hb-sdhci")
+			of_set_property(node, "status", "disabled",
+					sizeof("disabled"), 1);
 	}
 
 	if ((opp_table[0] >> 16) != HB_OPP_VERSION)
 		return 0;
 
-	node = of_find_node_by_path(root, "/cpus/cpu@0");
+	node = of_find_node_by_path("/cpus/cpu@0");
 	if (!node)
 		return 0;
 
@@ -80,7 +76,7 @@ static int highbank_mem_init(void)
 	/* load by the firmware at 0x1000 */
 	fdt = IOMEM(FIRMWARE_DTB_BASE);
 
-	root = of_unflatten_dtb(NULL, fdt);
+	root = of_unflatten_dtb(fdt);
 	if (!root) {
 		pr_warn("no dtb found at 0x1000 use default configuration\n");
 		fdt = NULL;
@@ -89,7 +85,7 @@ static int highbank_mem_init(void)
 
 	of_set_root_node(root);
 
-	np = of_find_node_by_path(root, "/memory");
+	np = of_find_node_by_path("/memory");
 	if (!np) {
 		pr_warn("no memory node use default configuration\n");
 		goto not_found;
@@ -112,7 +108,7 @@ mem_initcall(highbank_mem_init);
 
 static int highbank_devices_init(void)
 {
-	of_register_fixup(hb_fixup);
+	of_register_fixup(hb_fixup, NULL);
 	if (!fdt) {
 		highbank_register_gpio(0);
 		highbank_register_gpio(1);
@@ -128,8 +124,6 @@ static int highbank_devices_init(void)
 		devfs_add_partition("ram0", FIRMWARE_DTB_BASE, SZ_64K, DEVFS_PARTITION_FIXED, "firmware-dtb");
 	}
 
-	armlinux_set_bootparams((void *)(0x00000100));
-
 	devfs_add_partition("nvram", 0x00000, SZ_16K, DEVFS_PARTITION_FIXED, "env0");
 
 	return 0;
@@ -138,6 +132,9 @@ device_initcall(highbank_devices_init);
 
 static int highbank_console_init(void)
 {
+	barebox_set_model("Calxeda Highbank");
+	barebox_set_hostname("highbank");
+
 	highbank_register_uart();
 
 	return 0;

@@ -26,7 +26,7 @@
  */
 #define MAX_CONSECUTIVE_BAD_BLOCKS 4
 
-#define PROGRAM_NAME    "ubiformat"
+#define PROGRAM_NAME	"ubiformat"
 
 #include <common.h>
 #include <command.h>
@@ -40,6 +40,7 @@
 #include <malloc.h>
 #include <ioctl.h>
 #include <libbb.h>
+#include <libfile.h>
 #include <linux/mtd/mtd.h>
 #include <linux/kernel.h>
 #include <linux/stat.h>
@@ -325,6 +326,11 @@ static int flash_image(const struct mtd_dev_info *mtd,
 		goto out_close;
 	}
 
+	if (st_size == 0) {
+		sys_errmsg("file \"%s\" has size 0 bytes", args.image);
+		goto out_close;
+	}
+
 	verbose(args.verbose, "will write %d eraseblocks", img_ebs);
 	divisor = img_ebs;
 	for (eb = 0; eb < mtd->eb_cnt; eb++) {
@@ -332,7 +338,7 @@ static int flash_image(const struct mtd_dev_info *mtd,
 		long long ec;
 
 		if (!args.quiet && !args.verbose) {
-			printf("\r" PROGRAM_NAME ": flashing eraseblock %d -- %2u %% complete  ",
+			printf("\rubiformat: flashing eraseblock %d -- %2u %% complete  ",
 			       eb, (eb + 1) * 100 / mtd->eb_cnt);
 		}
 
@@ -442,7 +448,7 @@ static int format(const struct mtd_dev_info *mtd,
 		long long ec;
 
 		if (!args.quiet && !args.verbose) {
-			printf("\r" PROGRAM_NAME ": formatting eraseblock %d -- %2u %% complete  ",
+			printf("\rubiformat: formatting eraseblock %d -- %2u %% complete  ",
 			       eb, (eb + 1 - start_eb) * 100 / (mtd->eb_cnt - start_eb));
 		}
 
@@ -759,34 +765,32 @@ out_close_mtd:
 }
 
 BAREBOX_CMD_HELP_START(ubiformat)
-BAREBOX_CMD_HELP_USAGE(PROGRAM_NAME " <MTD device file name> [-s <bytes>] [-O <offs>] [-n]\n"
-	"\t[-f <file>] [-e <value>] [-x <num>] [-Q <num>] [-y] [-q] [-v]\n")
-BAREBOX_CMD_HELP_SHORT("A tool to format MTD devices and flash UBI images\n")
-BAREBOX_CMD_HELP_OPT("-s <bytes>", "minimum input/output unit used for UBI headers, "
-"e.g. sub-page size in case of NAND flash (equivalent to the minimum input/output "
-"unit size by default)\n")
-BAREBOX_CMD_HELP_OPT("-O <offs>", "offset if the VID header from start of the "
-"physical eraseblock (default is the next minimum I/O unit or sub-page after the EC "
-"header)\n")
-BAREBOX_CMD_HELP_OPT("-n", "only erase all eraseblock and preserve erase "
-"counters, do not write empty volume table\n")
-BAREBOX_CMD_HELP_OPT("-f <file>", "flash image file\n")
-BAREBOX_CMD_HELP_OPT("-e <value>", "use <value> as the erase counter value for all eraseblocks\n")
-BAREBOX_CMD_HELP_OPT("-x <num>", "UBI version number to put to EC headers "
-"(default is 1)\n")
-BAREBOX_CMD_HELP_OPT("-Q <num>", "32-bit UBI image sequence number to use "
-"(by default a random number is picked)\n")
-BAREBOX_CMD_HELP_OPT("-q", "suppress progress percentage information\n")
-BAREBOX_CMD_HELP_OPT("-v", "be verbose\n")
-BAREBOX_CMD_HELP_TEXT(
-"Example 1: " PROGRAM_NAME " /dev/nand0 -y - format nand0 and assume yes\n"
-"Example 2: " PROGRAM_NAME " /dev/nand0 -q -e 0 - format nand0,\n"
-"           be quiet and force erase counter value 0.\n";
-)
+BAREBOX_CMD_HELP_TEXT("A tool to format MTD devices and flash UBI images")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT("-s BYTES", "minimum input/output unit used for UBI headers")
+BAREBOX_CMD_HELP_OPT("\t", "e.g. sub-page size in case of NAND flash")
+BAREBOX_CMD_HELP_OPT("-O OFFS\t", "offset if the VID header from start of the")
+BAREBOX_CMD_HELP_OPT("\t", "physical eraseblock (default is the next minimum I/O unit or")
+BAREBOX_CMD_HELP_OPT("\t", "sub-page after the EC header)")
+BAREBOX_CMD_HELP_OPT("-n\t", "only erase all eraseblock and preserve erase")
+BAREBOX_CMD_HELP_OPT("\t", "counters, do not write empty volume table")
+BAREBOX_CMD_HELP_OPT("-f FILE\t", "flash image file")
+BAREBOX_CMD_HELP_OPT("-e VALUE", "use VALUE as erase counter value for all eraseblocks")
+BAREBOX_CMD_HELP_OPT("-x NUM\t", "UBI version number to put to EC headers (default 1)")
+BAREBOX_CMD_HELP_OPT("-Q NUM\t", "32-bit UBI image sequence number to use")
+BAREBOX_CMD_HELP_OPT("-q\t", "suppress progress percentage information")
+BAREBOX_CMD_HELP_OPT("-v\t", "be verbose")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Example 1: ubiformat /dev/nand0 -y - format nand0 and assume yes")
+BAREBOX_CMD_HELP_TEXT("Example 2: ubiformat /dev/nand0 -q -e 0 - format nand0,")
+BAREBOX_CMD_HELP_TEXT("\tbe quiet and force erase counter value 0.")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(ubiformat)
 	.cmd		= do_ubiformat,
-	.usage		= "format an ubi volume",
+	BAREBOX_CMD_DESC("format an ubi volume")
+	BAREBOX_CMD_OPTS("[-sOnfexQqv] MTDEVICE")
+	BAREBOX_CMD_GROUP(CMD_GRP_PART)
 	BAREBOX_CMD_HELP(cmd_ubiformat_help)
 BAREBOX_CMD_END

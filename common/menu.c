@@ -164,7 +164,7 @@ static void __print_entry(const char *str)
 static void print_menu_entry(struct menu *m, struct menu_entry *me,
 			     int selected)
 {
-	gotoXY(me->num + 1, 3);
+	gotoXY(3, me->num + 1);
 
 	if (me->type == MENU_ENTRY_BOX) {
 		if (me->box_state)
@@ -175,7 +175,7 @@ static void print_menu_entry(struct menu *m, struct menu_entry *me,
 		puts("   ");
 	}
 
-	printf(" %d: ", me->num);
+	printf(" %2d: ", me->num);
 	if (selected)
 		puts("\e[7m");
 
@@ -234,7 +234,7 @@ static void print_menu(struct menu *m)
 	struct menu_entry *me;
 
 	clear();
-	gotoXY(1, 2);
+	gotoXY(2, 1);
 	if(m->display) {
 		__print_entry(m->display);
 	} else {
@@ -269,7 +269,7 @@ int menu_show(struct menu *m)
 
 	countdown = m->auto_select;
 	if (m->auto_select >= 0) {
-		gotoXY(m->nb_entries + 2, 3);
+		gotoXY(3, m->nb_entries + 2);
 		if (!m->auto_display) {
 			printf("Auto Select in");
 		} else {
@@ -293,17 +293,17 @@ int menu_show(struct menu *m)
 		}
 	}
 
-	gotoXY(m->nb_entries + 2, 3);
+	gotoXY(3, m->nb_entries + 2);
 	printf("%*c", auto_display_len + 4, ' ');
 
-	gotoXY(m->selected->num + 1, 3);
+	gotoXY(3, m->selected->num + 1);
 
 	do {
 		struct menu_entry *old_selected = m->selected;
 		int repaint = 0;
 
 		if (m->auto_select >= 0)
-			ch = KEY_RETURN;
+			ch = BB_KEY_RETURN;
 		else
 			ch = read_key();
 
@@ -327,7 +327,7 @@ int menu_show(struct menu *m)
 			}
 			break;
 		}
-		case KEY_UP:
+		case BB_KEY_UP:
 			m->selected = list_entry(m->selected->list.prev, struct menu_entry,
 						 list);
 			if (&(m->selected->list) == &(m->entries)) {
@@ -336,7 +336,7 @@ int menu_show(struct menu *m)
 			}
 			repaint = 1;
 			break;
-		case KEY_DOWN:
+		case BB_KEY_DOWN:
 			m->selected = list_entry(m->selected->list.next, struct menu_entry,
 						 list);
 			if (&(m->selected->list) == &(m->entries)) {
@@ -353,25 +353,26 @@ int menu_show(struct menu *m)
 				m->selected->action(m, m->selected);
 			repaint = 1;
 			break;
-		case KEY_ENTER:
-			if (ch_previous == KEY_RETURN)
+		case BB_KEY_ENTER:
+			if (ch_previous == BB_KEY_RETURN)
 				break;
-		case KEY_RETURN:
-			if (ch_previous == KEY_ENTER)
+		case BB_KEY_RETURN:
+			if (ch_previous == BB_KEY_ENTER)
 				break;
 			clear();
 			gotoXY(1,1);
-			m->selected->action(m, m->selected);
+			if (m->selected->action)
+				m->selected->action(m, m->selected);
 			if (m->selected->non_re_ent)
 				return m->selected->num;
 			else
 				print_menu(m);
 			break;
-		case KEY_HOME:
+		case BB_KEY_HOME:
 			m->selected = list_first_entry(&m->entries, struct menu_entry, list);
 			repaint = 1;
 			break;
-		case KEY_END:
+		case BB_KEY_END:
 			m->selected = list_last_entry(&m->entries, struct menu_entry, list);
 			repaint = 1;
 			break;
@@ -467,7 +468,7 @@ static void menu_action_command(struct menu *m, struct menu_entry *me)
 	if (!s)
 		s = e->command;
 
-	ret = run_command (s, 0);
+	ret = run_command(s);
 
 	if (ret < 0)
 		udelay(1000000);

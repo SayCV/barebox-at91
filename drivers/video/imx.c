@@ -294,7 +294,7 @@ static int imxfb_activate_var(struct fb_info *info)
 	u32 pcr;
 	int i;
 
-	for (i = 0; i < info->num_modes; i++) {
+	for (i = 0; i < info->modes.num_modes; i++) {
 		if (!strcmp(fbi->mode[i].mode.name, mode->name)) {
 			fbi->pcr = fbi->mode[i].pcr;
 			break;
@@ -530,7 +530,7 @@ static int imxfb_probe(struct device_d *dev)
 	fbi = xzalloc(sizeof(*fbi));
 	info = &fbi->info;
 
-	fbi->per_clk = clk_get(dev, NULL);
+	fbi->per_clk = clk_get(dev, "per");
 	if (IS_ERR(fbi->per_clk))
 		return PTR_ERR(fbi->per_clk);
 
@@ -551,8 +551,8 @@ static int imxfb_probe(struct device_d *dev)
 	fbi->enable = pdata->enable;
 	fbi->dev = dev;
 	info->priv = fbi;
-	info->mode_list = mode_list;
-	info->num_modes = pdata->num_modes;
+	info->modes.modes = mode_list;
+	info->modes.num_modes = pdata->num_modes;
 	info->mode = &pdata->mode->mode;
 	info->xres = pdata->mode->mode.xres;
 	info->yres = pdata->mode->mode.yres;
@@ -580,13 +580,8 @@ static int imxfb_probe(struct device_d *dev)
 	return 0;
 }
 
-static void imxfb_remove(struct device_d *dev)
-{
-}
-
 static struct driver_d imxfb_driver = {
 	.name		= "imxfb",
 	.probe		= imxfb_probe,
-	.remove		= imxfb_remove,
 };
 device_platform_driver(imxfb_driver);

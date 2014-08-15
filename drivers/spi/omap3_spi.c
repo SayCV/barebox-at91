@@ -26,11 +26,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
- *
  */
 
 #include <common.h>
@@ -48,6 +43,10 @@
 
 #define SPI_XFER_BEGIN  0x01                    /* Assert CS before transfer */
 #define SPI_XFER_END    0x02                    /* Deassert CS after transfer */
+
+struct omap_spi_drvdata {
+	unsigned register_offset;
+};
 
 static void spi_reset(struct spi_master *master)
 {
@@ -102,8 +101,15 @@ int spi_claim_bus(struct spi_device *spi)
 	/* standard 4-wire master mode:	SCK, MOSI/out, MISO/in, nCS
 	 * REVISIT: this controller could support SPI_3WIRE mode.
 	 */
-	conf &= ~(OMAP3_MCSPI_CHCONF_IS|OMAP3_MCSPI_CHCONF_DPE1);
-	conf |= OMAP3_MCSPI_CHCONF_DPE0;
+	if (omap3_master->swap_miso_mosi) {
+		/* swapped */
+		conf |= (OMAP3_MCSPI_CHCONF_IS | OMAP3_MCSPI_CHCONF_DPE1);
+		conf &= ~OMAP3_MCSPI_CHCONF_DPE0;
+	} else {
+		 /* bootloader default */
+		conf &= ~(OMAP3_MCSPI_CHCONF_IS | OMAP3_MCSPI_CHCONF_DPE1);
+		conf |= OMAP3_MCSPI_CHCONF_DPE0;
+	}
 
 	/* wordlength */
 	conf &= ~OMAP3_MCSPI_CHCONF_WL_MASK;
@@ -325,17 +331,6 @@ static int omap3_spi_transfer(struct spi_device *spi, struct spi_message *mesg)
 
 static int omap3_spi_setup(struct spi_device *spi)
 {
-	struct spi_master *master = spi->master;
-
-	if (((master->bus_num == 1) && (spi->chip_select > 3)) ||
-			((master->bus_num == 2) && (spi->chip_select > 1)) ||
-			((master->bus_num == 3) && (spi->chip_select > 1)) ||
-			((master->bus_num == 4) && (spi->chip_select > 0))) {
-		printf("SPI error: unsupported chip select %i \
-			on bus %i\n", spi->chip_select, master->bus_num);
-		return -EINVAL;
-	}
-
 	if (spi->max_speed_hz > OMAP3_MCSPI_MAX_FREQ) {
 		printf("SPI error: unsupported frequency %i Hz. \
 			Max frequency is 48 Mhz\n", spi->max_speed_hz);
@@ -350,12 +345,31 @@ static int omap3_spi_setup(struct spi_device *spi)
 	return 0;
 }
 
+static int omap3_spi_probe_dt(struct device_d *dev, struct omap3_spi_master *omap3_master)
+{
+	if (!IS_ENABLED(CONFIG_OFDEVICE) || !dev->device_node)
+		return -ENODEV;
+
+	if (of_property_read_bool(dev->device_node, "ti,pindir-d0-out-d1-in"))
+		omap3_master->swap_miso_mosi = 1;
+
+	return 0;
+}
+
 static int omap3_spi_probe(struct device_d *dev)
 {
 	struct spi_master *master;
 	struct omap3_spi_master *omap3_master;
+	struct omap_spi_drvdata *devtype;
+	int ret;
+
+	ret = dev_get_drvdata(dev, (unsigned long *)&devtype);
+	if (ret)
+		return ret;
 
 	omap3_master = xzalloc(sizeof(*omap3_master));
+
+	omap3_spi_probe_dt(dev, omap3_master);
 
 	master = &omap3_master->master;
 	master->dev = dev;
@@ -368,16 +382,27 @@ static int omap3_spi_probe(struct device_d *dev)
 	 * McSPI3 has 2 CS (bus 3, cs 0 - 1)
 	 * McSPI4 has 1 CS (bus 4, cs 0)
 	 *
+	 * AM335x McSPI has 2 busses with 2 chip selects:
+	 * McSPI0 has 2 CS (bus 0, cs 0 - 1)
+	 * McSPI1 has 2 CS (bus 1, cs 0 - 1)
+	 *
 	 * The board code has to make sure that it does not use
 	 * invalid buses or chip selects.
 	 */
 
 	master->bus_num = dev->id;
-	master->num_chipselect = 4;
+
+	if (IS_ENABLED(CONFIG_ARCH_OMAP3))
+		master->num_chipselect = 4;
+	else
+		master->num_chipselect = 2;
 	master->setup = omap3_spi_setup;
 	master->transfer = omap3_spi_transfer;
 
-	omap3_master->regs = dev_request_mem_region(dev, 0);;
+	omap3_master->base = dev_request_mem_region(dev, 0);
+	omap3_master->regs = omap3_master->base;
+
+	omap3_master->regs += devtype->register_offset;
 
 	spi_reset(master);
 
@@ -386,8 +411,42 @@ static int omap3_spi_probe(struct device_d *dev)
 	return 0;
 }
 
+static struct omap_spi_drvdata omap3_data = {
+	.register_offset = 0x0,
+};
+
+static struct omap_spi_drvdata omap4_data = {
+	.register_offset = 0x100,
+};
+
+static __maybe_unused struct of_device_id omap_spi_dt_ids[] = {
+	{
+		.compatible = "ti,omap2-mcspi",
+		.data = (unsigned long)&omap3_data,
+	}, {
+		.compatible = "ti,omap4-mcspi",
+		.data = (unsigned long)&omap4_data,
+	}, {
+		/* sentinel */
+	}
+};
+
+static struct platform_device_id omap_spi_ids[] = {
+	{
+		.name = "omap3-spi",
+		.driver_data = (unsigned long)&omap3_data,
+	}, {
+		.name = "omap4-spi",
+		.driver_data = (unsigned long)&omap4_data,
+	}, {
+		/* sentinel */
+	},
+};
+
 static struct driver_d omap3_spi_driver = {
-	.name = "omap3_spi",
+	.name = "omap-spi",
 	.probe = omap3_spi_probe,
+	.of_compatible = DRV_OF_COMPAT(omap_spi_dt_ids),
+	.id_table = omap_spi_ids,
 };
 device_platform_driver(omap3_spi_driver);

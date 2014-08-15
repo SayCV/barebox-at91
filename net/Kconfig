@@ -3,17 +3,9 @@ menuconfig NET
 
 if NET
 
-config NET_DHCP
-	bool
-	prompt "dhcp support"
-
 config NET_NFS
 	bool
 	prompt "nfs support"
-
-config NET_PING
-	bool
-	prompt "ping support"
 
 config NET_NETCONSOLE
 	bool
@@ -25,5 +17,9 @@ config NET_NETCONSOLE
 config NET_RESOLV
 	bool
 	prompt "dns support"
+
+config NET_IFUP
+	default y
+	bool
 
 endif

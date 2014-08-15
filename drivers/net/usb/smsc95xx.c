@@ -447,7 +447,7 @@ static int smsc95xx_phy_initialize(struct usbnet *dev)
 		udelay(10 * 1000);
 		bmcr = smsc95xx_mdio_read(&dev->miibus, phy_id, MII_BMCR);
 		timeout++;
-	} while ((bmcr & MII_BMCR) && (timeout < 100));
+	} while ((bmcr & BMCR_RESET) && (timeout < 100));
 
 	if (timeout >= 100) {
 		netdev_warn(dev->net, "timeout on PHY Reset");
@@ -793,11 +793,11 @@ static int smsc95xx_rx_fixup(struct usbnet *dev, void *buf, int len)
 
 			/* last frame in this batch */
 			if (len == size) {
-				net_receive(buf, len - 4);
+				net_receive(&dev->edev, buf, len - 4);
 				return 1;
 			}
 
-			net_receive(packet, len - 4);
+			net_receive(&dev->edev, packet, len - 4);
 		}
 
 		len -= size;

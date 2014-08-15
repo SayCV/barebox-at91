@@ -33,8 +33,7 @@
 void fsl_get_sys_info(struct sys_info *sysInfo)
 {
 	void __iomem *gur = (void __iomem *)(MPC85xx_GUTS_ADDR);
-	uint plat_ratio, e500_ratio, half_freqSystemBus;
-	uint lcrr_div;
+	uint plat_ratio, e500_ratio, half_freqSystemBus, lcrr_div, ccr;
 	int i;
 
 	plat_ratio = in_be32(gur + MPC85xx_GUTS_PORPLLSR_OFFSET) & 0x0000003e;
@@ -65,20 +64,37 @@ void fsl_get_sys_info(struct sys_info *sysInfo)
 	}
 #endif
 
-	lcrr_div = in_be32(LBC_BASE_ADDR + FSL_LBC_LCCR) & LCRR_CLKDIV;
+	if (IS_ENABLED(CONFIG_FSL_IFC)) {
+		void __iomem *ifc = IFC_BASE_ADDR;
 
-	if (lcrr_div == 2 || lcrr_div == 4 || lcrr_div == 8) {
-		/*
-		 * The entire PQ38 family use the same bit-representation
-		 * for twice the clock divider values.
-		 */
+		ccr = in_be32(ifc + FSL_IFC_CCR_OFFSET);
+		ccr = ((ccr & IFC_CCR_CLK_DIV_MASK) >> IFC_CCR_CLK_DIV_SHIFT);
+		sysInfo->freqLocalBus = sysInfo->freqSystemBus / (ccr + 1);
+	} else {
+		lcrr_div = in_be32(LBC_BASE_ADDR + FSL_LBC_LCCR) & LCRR_CLKDIV;
+
+		if (lcrr_div == 2 || lcrr_div == 4 || lcrr_div == 8) {
+			/*
+			 * The entire PQ38 family use the same bit
+			 * representation for twice the clock divider values.
+			 */
 		lcrr_div *= 2;
 
 		sysInfo->freqLocalBus = sysInfo->freqSystemBus / lcrr_div;
-	} else {
-		/* In case anyone cares what the unknown value is */
-		sysInfo->freqLocalBus = lcrr_div;
+		} else {
+			/* In case anyone cares what the unknown value is */
+			sysInfo->freqLocalBus = lcrr_div;
+		}
 	}
+}
+
+unsigned long fsl_get_local_freq(void)
+{
+	struct sys_info sys_info;
+
+	fsl_get_sys_info(&sys_info);
+
+	return sys_info.freqLocalBus;
 }
 
 unsigned long fsl_get_bus_freq(ulong dummy)
@@ -88,6 +104,15 @@ unsigned long fsl_get_bus_freq(ulong dummy)
 	fsl_get_sys_info(&sys_info);
 
 	return sys_info.freqSystemBus;
+}
+
+unsigned long fsl_get_ddr_freq(ulong dummy)
+{
+	struct sys_info sys_info;
+
+	fsl_get_sys_info(&sys_info);
+
+	return sys_info.freqDDRBus;
 }
 
 unsigned long fsl_get_timebase_clock(void)
@@ -101,9 +126,18 @@ unsigned long fsl_get_timebase_clock(void)
 
 unsigned long fsl_get_i2c_freq(void)
 {
+	uint svr;
 	struct sys_info sysinfo;
+	void __iomem *gur = IOMEM(MPC85xx_GUTS_ADDR);
 
 	fsl_get_sys_info(&sysinfo);
+
+	svr = get_svr();
+	if ((svr == SVR_8544) || (svr == SVR_8544_E)) {
+		if (in_be32(gur + MPC85xx_GUTS_PORDEVSR2_OFFSET) &
+				MPC85xx_PORDEVSR2_SEC_CFG)
+			return sysinfo.freqSystemBus / 3;
+	}
 
 	return sysinfo.freqSystemBus / 2;
 }

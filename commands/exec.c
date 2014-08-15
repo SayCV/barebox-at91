@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <linux/stat.h>
 #include <errno.h>
+#include <libfile.h>
 #include <malloc.h>
 #include <xfuncs.h>
 
@@ -39,7 +40,7 @@ static int do_exec(int argc, char *argv[])
 		if (!script)
 			return 1;
 
-		if (run_command (script, 0) == -1)
+		if (run_command(script) == -1)
 			goto out;
 		free(script);
 	}
@@ -52,5 +53,6 @@ out:
 
 BAREBOX_CMD_START(exec)
 	.cmd		= do_exec,
-	.usage		= "execute a script",
+	BAREBOX_CMD_DESC("execute a script")
+	BAREBOX_CMD_GROUP(CMD_GRP_SCRIPT)
 BAREBOX_CMD_END

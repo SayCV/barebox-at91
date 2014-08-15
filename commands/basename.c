@@ -15,9 +15,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <common.h>
@@ -36,12 +33,13 @@ static int do_basename(int argc, char *argv[])
 }
 
 BAREBOX_CMD_HELP_START(basename)
-BAREBOX_CMD_HELP_USAGE("basename NAME BASENAME\n")
-BAREBOX_CMD_HELP_SHORT("strip NAME and store into $BASENAME\n")
+BAREBOX_CMD_HELP_TEXT("Remove directory part from the PATH and store result into variable VAR.")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(basename)
 	.cmd		= do_basename,
-	.usage		= "strip directory and suffix from filenames",
+	BAREBOX_CMD_DESC("strip directory and suffix from filenames")
+	BAREBOX_CMD_OPTS("PATH VAR")
+	BAREBOX_CMD_GROUP(CMD_GRP_FILE)
 	BAREBOX_CMD_HELP(cmd_basename_help)
 BAREBOX_CMD_END

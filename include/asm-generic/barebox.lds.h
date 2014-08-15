@@ -41,10 +41,23 @@
 
 #define BAREBOX_MAGICVARS	KEEP(*(SORT_BY_NAME(.barebox_magicvar*)))
 
+#define BAREBOX_CLK_TABLE()			\
+	. = ALIGN(8);				\
+	__clk_of_table_start = .;		\
+	KEEP(*(.__clk_of_table_*));		\
+	__clk_of_table_end = .;
+
 #define BAREBOX_DTB()				\
+	. = ALIGN(8);				\
 	__dtb_start = .;			\
-	KEEP(*(.dtb.rodata.*));				\
+	KEEP(*(.dtb.rodata.*));			\
 	__dtb_end = .;
+
+#define BAREBOX_IMD				\
+	KEEP(*(.barebox_imd_start))		\
+	KEEP(*(.barebox_imd_1*))		\
+	*(.barebox_imd_0*)			\
+	KEEP(*(.barebox_imd_end))
 
 #if defined(CONFIG_ARCH_BAREBOX_MAX_BARE_INIT_SIZE) && \
 CONFIG_ARCH_BAREBOX_MAX_BARE_INIT_SIZE < CONFIG_BAREBOX_MAX_BARE_INIT_SIZE
@@ -53,10 +66,23 @@ CONFIG_ARCH_BAREBOX_MAX_BARE_INIT_SIZE < CONFIG_BAREBOX_MAX_BARE_INIT_SIZE
 #define MAX_BARE_INIT_SIZE CONFIG_BAREBOX_MAX_BARE_INIT_SIZE
 #endif
 
+#if defined(CONFIG_ARCH_BAREBOX_MAX_PBL_SIZE) && \
+CONFIG_ARCH_BAREBOX_MAX_PBL_SIZE < CONFIG_BAREBOX_MAX_PBL_SIZE
+#define MAX_PBL_SIZE CONFIG_ARCH_BAREBOX_MAX_PBL_SIZE
+#else
+#define MAX_PBL_SIZE CONFIG_BAREBOX_MAX_PBL_SIZE
+#endif
+
 #include <linux/stringify.h>
 /* use 2 ASSERT because ld can not accept '"size" "10"' format */
 #define BAREBOX_BARE_INIT_SIZE					\
 	_barebox_bare_init_size = __bare_init_end - _text;	\
 	ASSERT(_barebox_bare_init_size < MAX_BARE_INIT_SIZE, "Barebox bare_init size > ") \
 	ASSERT(_barebox_bare_init_size < MAX_BARE_INIT_SIZE, __stringify(MAX_BARE_INIT_SIZE)) \
+
+#define BAREBOX_PBL_SIZE					\
+	_barebox_pbl_size = __bss_start - _text;		\
+	ASSERT(MAX_BARE_INIT_SIZE <= MAX_PBL_SIZE, "bare_init cannot be bigger than pbl") \
+	ASSERT(_barebox_pbl_size < MAX_PBL_SIZE, "Barebox pbl size > ") \
+	ASSERT(_barebox_pbl_size < MAX_PBL_SIZE, __stringify(MAX_PBL_SIZE)) \
 

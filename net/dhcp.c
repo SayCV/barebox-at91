@@ -667,7 +667,7 @@ static void dhcp_global_add(const char *var)
 	if (!var_global)
 		return;
 
-	globalvar_add_simple(var_global);
+	globalvar_add_simple(var_global, NULL);
 	free(var_global);
 }
 
@@ -699,16 +699,6 @@ static int dhcp_global_init(void)
 }
 late_initcall(dhcp_global_init);
 
-static void dhcp_getenv_int(const char *name, int *i)
-{
-	const char* str = getenv(name);
-
-	if (!str)
-		return;
-
-	*i = simple_strtoul(str, NULL, 10);
-}
-
 static int do_dhcp(int argc, char *argv[])
 {
 	int ret, opt;
@@ -716,7 +706,7 @@ static int do_dhcp(int argc, char *argv[])
 
 	dhcp_reset_env();
 
-	dhcp_getenv_int("global.dhcp.retries", &retries);
+	getenv_uint("global.dhcp.retries", &retries);
 
 	while((opt = getopt(argc, argv, "H:v:c:u:U:r:")) > 0) {
 		switch(opt) {
@@ -800,37 +790,24 @@ out:
 }
 
 BAREBOX_CMD_HELP_START(dhcp)
-BAREBOX_CMD_HELP_USAGE("dhcp [OPTIONS]\n")
-BAREBOX_CMD_HELP_SHORT("Invoke dhcp client to obtain ip/boot params.\n")
-BAREBOX_CMD_HELP_OPT  ("-H <hostname>",
-"Hostname to send to the DHCP server\n")
-BAREBOX_CMD_HELP_OPT  ("-v <vendor_id>",
-"DHCP Vendor ID (code 60) submitted in DHCP requests. It can\n"
-"be used in the DHCP server's configuration to select options\n"
-"(e.g. bootfile or server) which are valid for barebox clients only.\n")
-BAREBOX_CMD_HELP_OPT  ("-c <client_id>",
-"DHCP Client ID (code 61) submitted in DHCP requests. It can\n"
-"be used in the DHCP server's configuration to select options\n"
-"(e.g. bootfile or server) which are valid for barebox clients only.\n")
-BAREBOX_CMD_HELP_OPT  ("-u <client_uuid>",
-"DHCP Client UUID (code 97) submitted in DHCP requests. It can\n"
-"be used in the DHCP server's configuration to select options\n"
-"(e.g. bootfile or server) which are valid for barebox clients only.\n")
-BAREBOX_CMD_HELP_OPT  ("-U <user_class>",
-"DHCP User class (code 77) submitted in DHCP requests. It can\n"
-"be used in the DHCP server's configuration to select options\n"
-"(e.g. bootfile or server) which are valid for barebox clients only.\n")
-BAREBOX_CMD_HELP_OPT  ("-r <retry>", "retry limit by default "__stringify(DHCP_DEFAULT_RETRY)"\n");
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT ("-H HOSTNAME", "hostname to send to the DHCP server")
+BAREBOX_CMD_HELP_OPT ("-v ID\t", "DHCP Vendor ID (code 60) submitted in DHCP requests")
+BAREBOX_CMD_HELP_OPT ("-c ID\t", "DHCP Client ID (code 61) submitted in DHCP requests")
+BAREBOX_CMD_HELP_OPT ("-u UUID\t", "DHCP Client UUID (code 97) submitted in DHCP requests")
+BAREBOX_CMD_HELP_OPT ("-U CLASS", "DHCP User class (code 77) submitted in DHCP requests")
+BAREBOX_CMD_HELP_OPT ("-r RETRY", "retry limit (default 20)");
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(dhcp)
 	.cmd		= do_dhcp,
-	.usage		= "invoke dhcp client to obtain ip/boot params",
+	BAREBOX_CMD_DESC("DHCP client to obtain IP or boot params")
+	BAREBOX_CMD_OPTS("[-HvcuUr]")
+	BAREBOX_CMD_GROUP(CMD_GRP_NET)
 	BAREBOX_CMD_HELP(cmd_dhcp_help)
 	BAREBOX_CMD_COMPLETE(empty_complete)
 BAREBOX_CMD_END
 
-BAREBOX_MAGICVAR_NAMED(global_hostname, global.hostname, "hostname to send or returned from DHCP request");
 BAREBOX_MAGICVAR_NAMED(global_dhcp_bootfile, global.dhcp.bootfile, "bootfile returned from DHCP request");
 BAREBOX_MAGICVAR_NAMED(global_dhcp_rootpath, global.dhcp.rootpath, "rootpath returned from DHCP request");
 BAREBOX_MAGICVAR_NAMED(global_dhcp_vendor_id, global.dhcp.vendor_id, "vendor id to send to the DHCP server");

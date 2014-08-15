@@ -29,6 +29,7 @@
 #include <init.h>
 #include <clock.h>
 #include <errno.h>
+#include <of.h>
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <notifier.h>
@@ -96,7 +97,7 @@ static int imx_gpt_probe(struct device_d *dev)
 
 	/* one timer is enough */
 	if (timer_base)
-		return -EBUSY;
+		return 0;
 
 	ret = dev_get_drvdata(dev, (unsigned long *)&regs);
 	if (ret)
@@ -165,4 +166,4 @@ static int imx_gpt_init(void)
 {
 	return platform_driver_register(&imx_gpt_driver);
 }
-coredevice_initcall(imx_gpt_init);
+postcore_initcall(imx_gpt_init);

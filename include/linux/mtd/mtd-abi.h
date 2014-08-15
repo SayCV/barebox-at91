@@ -7,7 +7,7 @@
 #ifndef __MTD_ABI_H__
 #define __MTD_ABI_H__
 
-#ifndef DOXYGEN_SHOULD_SKIP_THIS
+#include <asm-generic/div64.h>
 
 struct erase_info_user {
 	uint32_t start;
@@ -18,6 +18,25 @@ struct mtd_oob_buf {
 	uint32_t start;
 	uint32_t length;
 	unsigned char *ptr;
+};
+
+/**
+ * MTD operation modes
+ *
+ * @MTD_OPS_PLACE_OOB:	OOB data are placed at the given offset (default)
+ * @MTD_OPS_AUTO_OOB:	OOB data are automatically placed at the free areas
+ *			which are defined by the internal ecclayout
+ * @MTD_OPS_RAW:	data are transferred as-is, with no error correction;
+ *			this mode implies %MTD_OPS_PLACE_OOB
+ *
+ * These modes can be passed to ioctl(MEMWRITE) and are also used internally.
+ * See notes on "MTD file modes" for discussion on %MTD_OPS_RAW vs.
+ * %MTD_FILE_MODE_RAW.
+ */
+enum {
+	MTD_OPS_PLACE_OOB = 0,
+	MTD_OPS_AUTO_OOB = 1,
+	MTD_OPS_RAW = 2,
 };
 
 #define MTD_ABSENT		0
@@ -54,7 +73,7 @@ struct mtd_oob_buf {
 struct mtd_info_user {
 	uint8_t type;
 	uint32_t flags;
-	uint32_t size;	 // Total size of the MTD
+	uint64_t size;	 /* Total size of the MTD */
 	uint32_t erasesize;
 	uint32_t writesize;
 	uint32_t oobsize;   // Amount of OOB data per block (e.g. 16)
@@ -63,6 +82,7 @@ struct mtd_info_user {
 	uint32_t ecctype;
 	uint32_t eccsize;
 	struct mtd_info *mtd;
+	uint32_t subpagesize;
 };
 
 struct region_info_user {
@@ -153,6 +173,12 @@ enum mtd_file_modes {
 	MTD_MODE_RAW,
 };
 
-#endif /* DOXYGEN_SHOULD_SKIP_THIS */
+
+static inline uint32_t mtd_user_div_by_eb(uint64_t sz,
+	struct mtd_info_user *mtd_user)
+{
+	do_div(sz, mtd_user->erasesize);
+	return sz;
+}
 
 #endif /* __MTD_ABI_H__ */

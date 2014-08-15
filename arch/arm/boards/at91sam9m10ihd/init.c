@@ -15,13 +15,14 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
 #include <mach/board.h>
 #include <gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91sam9_smc.h>
 #include <input/qt1070.h>
 #include <readkey.h>
@@ -109,7 +110,7 @@ static void ek_add_device_mci(void) {}
 
 struct qt1070_platform_data qt1070_pdata = {
 	.irq_pin	= AT91_PIN_PB19,
-	.code		= { KEY_ENTER, KEY_ENTER, KEY_UP, KEY_DOWN, },
+	.code		= { BB_KEY_ENTER, BB_KEY_ENTER, BB_KEY_UP, BB_KEY_DOWN, },
 	.nb_code	= 4,
 };
 
@@ -269,7 +270,6 @@ static int at91sam9m10ihd_devices_init(void)
 	devfs_add_partition("nand0", SZ_512K, SZ_128K, DEVFS_PARTITION_FIXED, "env_raw1");
 	dev_add_bb_dev("env_raw1", "env1");
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_6 + 0x100));
 	/*
 	 * The internal Atmel kernel use the SAM9M10G45EK machine id
 	 * The mainline use DT
@@ -282,7 +282,17 @@ device_initcall(at91sam9m10ihd_devices_init);
 
 static int at91sam9m10ihd_console_init(void)
 {
+	barebox_set_model("Atmel at91sam9m10ihd");
+	barebox_set_hostname("at91sam9m10ihd");
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 console_initcall(at91sam9m10ihd_console_init);
+
+static int at91sam9m10ihd_main_clock(void)
+{
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(at91sam9m10ihd_main_clock);

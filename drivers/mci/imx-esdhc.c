@@ -24,6 +24,7 @@
 #include <common.h>
 #include <driver.h>
 #include <init.h>
+#include <of.h>
 #include <malloc.h>
 #include <mci.h>
 #include <clock.h>
@@ -265,6 +266,21 @@ esdhc_send_cmd(struct mci_host *mci, struct mci_cmd *cmd, struct mci_data *data)
 
 	if (irqstat & IRQSTAT_CTOE)
 		return -ETIMEDOUT;
+
+	/* Workaround for ESDHC errata ENGcm03648 / ENGcm12360 */
+	if (!data && (cmd->resp_type & MMC_RSP_BUSY)) {
+		/*
+		 * Poll on DATA0 line for cmd with busy signal for
+		 * timout / 10 usec since DLA polling can be insecure.
+		 */
+		ret = wait_on_timeout(2500 * MSECOND,
+			(esdhc_read32(regs + SDHCI_PRESENT_STATE) & PRSSTAT_DAT0));
+
+		if (ret) {
+			dev_err(host->dev, "timeout PRSSTAT_DAT0\n");
+			return -ETIMEDOUT;
+		}
+	}
 
 	/* Copy the response to the response buffer */
 	if (cmd->resp_type & MMC_RSP_136) {
@@ -540,7 +556,7 @@ static int fsl_esdhc_probe(struct device_d *dev)
 	if (pdata && pdata->caps)
 		mci->host_caps = pdata->caps;
 	else
-		mci->host_caps = MMC_MODE_4BIT;
+		mci->host_caps = MMC_CAP_4_BIT_DATA;
 
 	if (pdata && pdata->devname) {
 		mci->devname = pdata->devname;
@@ -551,7 +567,7 @@ static int fsl_esdhc_probe(struct device_d *dev)
 	}
 
 	if (caps & ESDHC_HOSTCAPBLT_HSS)
-		mci->host_caps |= MMC_MODE_HS_52MHz | MMC_MODE_HS;
+		mci->host_caps |= MMC_CAP_MMC_HIGHSPEED | MMC_CAP_SD_HIGHSPEED;
 
 	host->mci.send_cmd = esdhc_send_cmd;
 	host->mci.set_ios = esdhc_set_ios;
@@ -566,6 +582,10 @@ static int fsl_esdhc_probe(struct device_d *dev)
 	if (host->mci.f_min < 200000)
 		host->mci.f_min = 200000;
 	host->mci.f_max = rate;
+	if (pdata) {
+		host->mci.use_dsr = pdata->use_dsr;
+		host->mci.dsr_val = pdata->dsr_val;
+	}
 
 	mci_of_parse(&host->mci);
 
@@ -576,6 +596,8 @@ static int fsl_esdhc_probe(struct device_d *dev)
 
 static __maybe_unused struct of_device_id fsl_esdhc_compatible[] = {
 	{
+		.compatible = "fsl,imx25-esdhc",
+	}, {
 		.compatible = "fsl,imx51-esdhc",
 	}, {
 		.compatible = "fsl,imx53-esdhc",

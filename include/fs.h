@@ -39,7 +39,6 @@ typedef struct filep {
 #define FS_DRIVER_NO_DEV	1
 
 struct fs_driver_d {
-	char *name;
 	int (*probe) (struct device_d *dev);
 	int (*mkdir)(struct device_d *dev, const char *pathname);
 	int (*rmdir)(struct device_d *dev, const char *pathname);
@@ -88,6 +87,7 @@ struct fs_driver_d {
 
 extern struct list_head fs_device_list;
 #define for_each_fs_device(f) list_for_each_entry(f, &fs_device_list, list)
+extern struct bus_type fs_bus;
 
 struct fs_device_d {
 	char *backingstore; /* the device we are associated with */
@@ -99,6 +99,7 @@ struct fs_device_d {
 	char *path;
 	struct device_d *parent_device;
 	struct list_head list;
+	char *options;
 };
 
 #define drv_to_fs_driver(d) container_of(d, struct fs_driver_d, drv)
@@ -140,7 +141,8 @@ int closedir(DIR *dir);
 int symlink(const char *pathname, const char *newpath);
 int readlink(const char *path, char *buf, size_t bufsiz);
 
-int mount (const char *device, const char *fsname, const char *path);
+int mount (const char *device, const char *fsname, const char *path,
+		const char *fsoptions);
 int umount(const char *pathname);
 
 /* not-so-standard functions */
@@ -148,6 +150,8 @@ int erase(int fd, size_t count, unsigned long offset);
 int protect(int fd, size_t count, unsigned long offset, int prot);
 int protect_file(const char *file, int prot);
 void *memmap(int fd, int flags);
+
+#define FILESIZE_MAX	((loff_t)-1)
 
 #define PROT_READ	1
 #define PROT_WRITE	2
@@ -160,20 +164,6 @@ int ls(const char *path, ulong flags);
 char *mkmodestr(unsigned long mode, char *str);
 
 /*
- * Read a file into memory. Memory is allocated with malloc and must
- * be freed with free() afterwards. This function allocates one
- * byte more than actually needed and sets this to zero, so that
- * it can be used for text files.
- * If size is nonzero it s set to the file size.
- */
-void *read_file(const char *filename, size_t *size);
-
-/*
- * Write a buffer to a file. This file is newly created.
- */
-int write_file(const char *filename, void *buf, size_t size);
-
-/*
  * This function turns 'path' into an absolute path and removes all occurrences
  * of "..", "." and double slashes. The returned string must be freed wit free().
  */
@@ -181,6 +171,8 @@ char *normalise_path(const char *path);
 char *normalise_link(const char *pathname, const char* symlink);
 
 char *get_mounted_path(const char *path);
+
+struct cdev *get_cdev_by_mountpath(const char *path);
 
 /* Register a new filesystem driver */
 int register_fs_driver(struct fs_driver_d *fsdrv);
@@ -190,5 +182,10 @@ int automount_add(const char *path, const char *cmd);
 void automount_print(void);
 
 int unlink_recursive(const char *path, char **failedpath);
+
+int fsdev_open_cdev(struct fs_device_d *fsdev);
+const char *cdev_get_mount_path(struct cdev *cdev);
+const char *cdev_mount_default(struct cdev *cdev, const char *fsoptions);
+void mount_all(void);
 
 #endif /* __FS_H */

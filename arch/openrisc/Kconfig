@@ -1,16 +1,15 @@
 config OPENRISC
 	bool
+	select HAS_CACHE
 	select HAVE_CONFIGURABLE_MEMORY_LAYOUT
 	select HAVE_DEFAULT_ENVIRONMENT_NEW
+	select GENERIC_FIND_NEXT_BIT
 	default y
 
 # not used
 config ARCH_TEXT_BASE
 	hex
 	default 0x00000000
-
-config BOARDINFO
-	default "or1k" if GENERIC
 
 choice
 	prompt "Select your board"

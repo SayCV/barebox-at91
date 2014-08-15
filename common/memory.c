@@ -58,7 +58,7 @@ void mem_malloc_init(void *start, void *end)
 #endif
 }
 
-#ifndef __SANDBOX__
+#if !defined __SANDBOX__ && !defined CONFIG_ARCH_EFI
 static int mem_malloc_resource(void)
 {
 	/*
@@ -148,7 +148,8 @@ struct resource *request_sdram_region(const char *name, resource_size_t start,
 	for_each_memory_bank(bank) {
 		struct resource *res;
 
-		res = request_region(bank->res, name, start, start + size - 1);
+		res = __request_region(bank->res, name, start,
+				       start + size - 1);
 		if (res)
 			return res;
 	}
@@ -163,7 +164,7 @@ int release_sdram_region(struct resource *res)
 
 #ifdef CONFIG_OFTREE
 
-static int of_memory_fixup(struct device_node *node)
+static int of_memory_fixup(struct device_node *node, void *unused)
 {
 	struct memory_bank *bank;
 	int err;
@@ -200,7 +201,7 @@ static int of_memory_fixup(struct device_node *node)
 
 static int of_register_memory_fixup(void)
 {
-	return of_register_fixup(of_memory_fixup);
+	return of_register_fixup(of_memory_fixup, NULL);
 }
 late_initcall(of_register_memory_fixup);
 #endif

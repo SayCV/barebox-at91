@@ -43,8 +43,6 @@ static int nhk8815_nand_init(void)
 }
 
 static struct nomadik_nand_platform_data nhk8815_nand_data = {
-	.options	= NAND_COPYBACK | NAND_CACHEPRG | NAND_NO_PADDING \
-			| NAND_NO_READRDY | NAND_NO_AUTOINCR,
 	.init		= nhk8815_nand_init,
 };
 
@@ -100,7 +98,6 @@ static int nhk8815_devices_init(void)
 	platform_device_register(&nhk8815_nand_device);
 
 	armlinux_set_architecture(MACH_TYPE_NOMADIK);
-	armlinux_set_bootparams((void *)(0x00000100));
 
 	devfs_add_partition("nand0", 0x0000000, 0x040000, DEVFS_PARTITION_FIXED, "xloader_raw");
 	devfs_add_partition("nand0", 0x0040000, 0x080000, DEVFS_PARTITION_FIXED, "meminit_raw");
@@ -115,7 +112,11 @@ device_initcall(nhk8815_devices_init);
 
 static int nhk8815_console_init(void)
 {
+	barebox_set_model("Nomadik nhk8815");
+	barebox_set_hostname("nhk8815");
+
 	st8815_register_uart(1);
+
 	return 0;
 }
 

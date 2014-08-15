@@ -41,7 +41,6 @@ static int clps711x_devices_init(void)
 	devfs_add_partition("nor0", SZ_256K, SZ_256K, DEVFS_PARTITION_FIXED,
 			    "env0");
 
-	armlinux_set_bootparams((void *)SDRAM0_BASE + 0x100);
 	armlinux_set_architecture(MACH_TYPE_CLEP7212);
 	armlinux_set_serial(((u64)serial_h << 32) | serial_l);
 
@@ -51,6 +50,9 @@ device_initcall(clps711x_devices_init);
 
 static int clps711x_console_init(void)
 {
+	barebox_set_model("Cirrus Logic CLEP7212");
+	barebox_set_hostname("clep7212");
+
 	clps711x_add_uart(0);
 
 	return 0;

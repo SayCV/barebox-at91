@@ -26,9 +26,11 @@
 #include <command.h>
 #include <driver.h>
 #include <malloc.h>
+#include <console.h>
 #include <linux/ctype.h>
 #include <errno.h>
 #include <fs.h>
+#include <of.h>
 #include <linux/list.h>
 #include <complete.h>
 #include <pinctrl.h>
@@ -100,6 +102,16 @@ int device_detect(struct device_d *dev)
 	return dev->detect(dev);
 }
 
+int device_detect_by_name(const char *devname)
+{
+	struct device_d *dev = get_device_by_name(devname);
+
+	if (!dev)
+		return -ENODEV;
+
+	return device_detect(dev);
+}
+
 static int match(struct driver_d *drv, struct device_d *dev)
 {
 	int ret;
@@ -142,6 +154,7 @@ int register_device(struct device_d *new_device)
 	INIT_LIST_HEAD(&new_device->cdevs);
 	INIT_LIST_HEAD(&new_device->parameters);
 	INIT_LIST_HEAD(&new_device->active);
+	INIT_LIST_HEAD(&new_device->bus_list);
 
 	if (new_device->bus) {
 		if (!new_device->parent)
@@ -168,6 +181,8 @@ int unregister_device(struct device_d *old_dev)
 	struct device_d *child, *dt;
 
 	dev_dbg(old_dev, "unregister\n");
+
+	dev_remove_parameters(old_dev);
 
 	if (old_dev->driver)
 		old_dev->bus->remove(old_dev);
@@ -226,13 +241,14 @@ int register_driver(struct driver_d *drv)
 }
 EXPORT_SYMBOL(register_driver);
 
-struct resource *dev_get_resource(struct device_d *dev, int num)
+struct resource *dev_get_resource(struct device_d *dev, unsigned long type,
+				  int num)
 {
 	int i, n = 0;
 
 	for (i = 0; i < dev->num_resources; i++) {
 		struct resource *res = &dev->resource[i];
-		if (resource_type(res) == IORESOURCE_MEM) {
+		if (resource_type(res) == type) {
 			if (n == num)
 				return res;
 			n++;
@@ -246,7 +262,7 @@ void *dev_get_mem_region(struct device_d *dev, int num)
 {
 	struct resource *res;
 
-	res = dev_get_resource(dev, num);
+	res = dev_get_resource(dev, IORESOURCE_MEM, num);
 	if (!res)
 		return NULL;
 
@@ -255,13 +271,14 @@ void *dev_get_mem_region(struct device_d *dev, int num)
 EXPORT_SYMBOL(dev_get_mem_region);
 
 struct resource *dev_get_resource_by_name(struct device_d *dev,
+					  unsigned long type,
 					  const char *name)
 {
 	int i;
 
 	for (i = 0; i < dev->num_resources; i++) {
 		struct resource *res = &dev->resource[i];
-		if (resource_type(res) != IORESOURCE_MEM)
+		if (resource_type(res) != type)
 			continue;
 		if (!res->name)
 			continue;
@@ -276,7 +293,7 @@ void *dev_get_mem_region_by_name(struct device_d *dev, const char *name)
 {
 	struct resource *res;
 
-	res = dev_get_resource_by_name(dev, name);
+	res = dev_get_resource_by_name(dev, IORESOURCE_MEM, name);
 	if (!res)
 		return NULL;
 
@@ -288,7 +305,7 @@ void __iomem *dev_request_mem_region_by_name(struct device_d *dev, const char *n
 {
 	struct resource *res;
 
-	res = dev_get_resource_by_name(dev, name);
+	res = dev_get_resource_by_name(dev, IORESOURCE_MEM, name);
 	if (!res)
 		return NULL;
 
@@ -304,7 +321,7 @@ void __iomem *dev_request_mem_region(struct device_d *dev, int num)
 {
 	struct resource *res;
 
-	res = dev_get_resource(dev, num);
+	res = dev_get_resource(dev, IORESOURCE_MEM, num);
 	if (!res)
 		return NULL;
 
@@ -360,10 +377,13 @@ const char *dev_id(const struct device_d *dev)
 	return buf;
 }
 
-int dev_printf(const struct device_d *dev, const char *format, ...)
+int dev_printf(int level, const struct device_d *dev, const char *format, ...)
 {
 	va_list args;
 	int ret = 0;
+
+	if (level > barebox_loglevel)
+		return 0;
 
 	if (dev->driver && dev->driver->name)
 		ret += printf("%s ", dev->driver->name);
@@ -403,145 +423,3 @@ int dev_get_drvdata(struct device_d *dev, unsigned long *data)
 
 	return -ENODEV;
 }
-
-#ifdef CONFIG_CMD_DEVINFO
-static int do_devinfo_subtree(struct device_d *dev, int depth)
-{
-	struct device_d *child;
-	struct cdev *cdev;
-	int i;
-
-	for (i = 0; i < depth; i++)
-		printf("     ");
-
-	printf("`---- %s", dev_name(dev));
-	if (!list_empty(&dev->cdevs)) {
-		printf("\n");
-		list_for_each_entry(cdev, &dev->cdevs, devices_list) {
-			for (i = 0; i < depth + 1; i++)
-				printf("     ");
-			printf("`---- 0x%08llx-0x%08llx: /dev/%s\n",
-					cdev->offset,
-					cdev->offset + cdev->size - 1,
-					cdev->name);
-		}
-	} else {
-		printf("\n");
-	}
-
-	if (!list_empty(&dev->children)) {
-		device_for_each_child(dev, child) {
-			do_devinfo_subtree(child, depth + 1);
-		}
-	}
-
-	return 0;
-}
-
-static int do_devinfo(int argc, char *argv[])
-{
-	struct device_d *dev;
-	struct driver_d *drv;
-	struct param_d *param;
-	int i;
-	struct resource *res;
-
-	if (argc == 1) {
-		printf("devices:\n");
-
-		for_each_device(dev) {
-			if (!dev->parent)
-				do_devinfo_subtree(dev, 0);
-		}
-
-		printf("\ndrivers:\n");
-		for_each_driver(drv)
-			printf("%s\n",drv->name);
-	} else {
-		dev = get_device_by_name(argv[1]);
-
-		if (!dev) {
-			printf("no such device: %s\n",argv[1]);
-			return -1;
-		}
-
-		printf("resources:\n");
-		for (i = 0; i < dev->num_resources; i++) {
-			res = &dev->resource[i];
-			printf("num   : %d\n", i);
-			if (res->name)
-				printf("name  : %s\n", res->name);
-			printf("start : " PRINTF_CONVERSION_RESOURCE "\nsize  : "
-					PRINTF_CONVERSION_RESOURCE "\n",
-			       res->start, resource_size(res));
-		}
-
-		printf("driver: %s\n", dev->driver ?
-				dev->driver->name : "none");
-
-		printf("bus: %s\n\n", dev->bus ?
-				dev->bus->name : "none");
-
-		if (dev->info)
-			dev->info(dev);
-
-		printf("%s\n", list_empty(&dev->parameters) ?
-				"no parameters available" : "Parameters:");
-
-		list_for_each_entry(param, &dev->parameters, list) {
-			printf("%16s = %s", param->name, dev_get_param(dev, param->name));
-			if (param->info)
-				param->info(param);
-			printf("\n");
-		}
-#ifdef CONFIG_OFDEVICE
-		if (dev->device_node) {
-			printf("\ndevice node: %s\n", dev->device_node->full_name);
-			of_print_nodes(dev->device_node, 0);
-		}
-#endif
-	}
-
-	return 0;
-}
-
-BAREBOX_CMD_HELP_START(devinfo)
-BAREBOX_CMD_HELP_USAGE("devinfo [DEVICE]\n")
-BAREBOX_CMD_HELP_SHORT("Output device information.\n")
-BAREBOX_CMD_HELP_END
-
-/**
- * @page devinfo_command
-
-If called without arguments, devinfo shows a summary of the known
-devices and drivers.
-
-If called with a device path being the argument, devinfo shows more
-default information about this device and its parameters.
-
-Example from an MPC5200 based system:
-
-@verbatim
-  barebox:/ devinfo /dev/eth0
-  base  : 0x1002b000
-  size  : 0x00000000
-  driver: fec_mpc5xxx
-
-  no info available for eth0
-  Parameters:
-      ipaddr = 192.168.23.197
-     ethaddr = 80:81:82:83:84:86
-     gateway = 192.168.23.1
-     netmask = 255.255.255.0
-    serverip = 192.168.23.2
-@endverbatim
- */
-
-BAREBOX_CMD_START(devinfo)
-	.cmd		= do_devinfo,
-	.usage		= "Show information about devices and drivers.",
-	BAREBOX_CMD_HELP(cmd_devinfo_help)
-	BAREBOX_CMD_COMPLETE(device_complete)
-BAREBOX_CMD_END
-#endif
-

@@ -21,7 +21,7 @@
 #include <environment.h>
 #include <mach/imx51-regs.h>
 #include <fec.h>
-#include <mach/gpio.h>
+#include <gpio.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
 #include <partition.h>
@@ -120,7 +120,6 @@ static int eukrea_cpuimx51_devices_init(void)
 	gpio_set_value(GPIO_LAN8700_RESET, 1);
 	gpio_direction_output(GPIO_LCD_BL, 0);
 
-	armlinux_set_bootparams((void *)0x90000100);
 	armlinux_set_architecture(MACH_TYPE_EUKREA_CPUIMX51SD);
 
 	return 0;
@@ -131,6 +130,9 @@ device_initcall(eukrea_cpuimx51_devices_init);
 static int eukrea_cpuimx51_console_init(void)
 {
 	mxc_iomux_v3_setup_multiple_pads(eukrea_cpuimx51_pads, ARRAY_SIZE(eukrea_cpuimx51_pads));
+
+	barebox_set_model("Eukrea CPUIMX51");
+	barebox_set_hostname("eukrea-cpuimx51");
 
 	imx51_init_lowlevel(800);
 

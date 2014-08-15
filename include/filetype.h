@@ -10,6 +10,7 @@ enum filetype {
 	filetype_unknown,
 	filetype_arm_zimage,
 	filetype_lzo_compressed,
+	filetype_lz4_compressed,
 	filetype_arm_barebox,
 	filetype_uimage,
 	filetype_ubi,
@@ -26,6 +27,12 @@ enum filetype {
 	filetype_png,
 	filetype_ext,
 	filetype_gpt,
+	filetype_ubifs,
+	filetype_bpk,
+	filetype_barebox_env,
+	filetype_ch_image,
+	filetype_ch_image_be,
+	filetype_exe,
 	filetype_max,
 };
 

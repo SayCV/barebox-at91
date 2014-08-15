@@ -3,6 +3,7 @@
 #include <init.h>
 #include <driver.h>
 #include <io.h>
+#include <gpio.h>
 #include <ns16550.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
@@ -16,7 +17,6 @@
 #include <linux/err.h>
 #include <sizes.h>
 #include <asm/mmu.h>
-#include <mach/gpio.h>
 #include <envfs.h>
 #include <i2c/i2c.h>
 #include <gpio.h>
@@ -33,6 +33,9 @@ static int board_revision;
 
 static int panda_console_init(void)
 {
+	barebox_set_model("Texas Instruments panda");
+	barebox_set_hostname("panda");
+
 	omap44xx_add_uart3();
 
 	return 0;
@@ -155,7 +158,6 @@ static int panda_devices_init(void)
 	panda_ehci_init();
 
 	panda_led_init();
-	armlinux_set_bootparams((void *)0x80000100);
 	armlinux_set_architecture(MACH_TYPE_OMAP4_PANDA);
 
 	return 0;

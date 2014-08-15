@@ -29,6 +29,8 @@
 #include <gpio.h>
 #include <io.h>
 #include <malloc.h>
+#include <linux/clk.h>
+#include <linux/err.h>
 #include <mach/imx-regs.h>
 #include <mach/clock.h>
 
@@ -56,6 +58,7 @@ struct stm_priv {
 	int baudrate;
 	struct notifier_block notify;
 	void __iomem *base;
+	struct clk *clk;
 };
 
 static void stm_serial_putc(struct console_device *cdev, char c)
@@ -107,7 +110,7 @@ static int stm_serial_setbaudrate(struct console_device *cdev, int new_baudrate)
 	writel(0, priv->base + UARTDBGCR);
 
 	/* Calculate and set baudrate */
-	quot = (imx_get_xclk() * 4) / new_baudrate;
+	quot = (clk_get_rate(priv->clk) * 4) / new_baudrate;
 	writel(quot & 0x3f, priv->base + UARTDBGFBRD);
 	writel(quot >> 6, priv->base + UARTDBGIBRD);
 
@@ -150,7 +153,6 @@ static int stm_serial_probe(struct device_d *dev)
 
 	cdev = &priv->cdev;
 
-	cdev->f_caps = CONSOLE_STDIN | CONSOLE_STDOUT | CONSOLE_STDERR;
 	cdev->tstc = stm_serial_tstc;
 	cdev->putc = stm_serial_putc;
 	cdev->getc = stm_serial_getc;
@@ -160,6 +162,9 @@ static int stm_serial_probe(struct device_d *dev)
 
 	dev->priv = priv;
 	priv->base = dev_request_mem_region(dev, 0);
+	priv->clk = clk_get(dev, NULL);
+	if (IS_ERR(priv->clk))
+		return PTR_ERR(priv->clk);
 
 	stm_serial_init_port(priv);
 	stm_serial_setbaudrate(cdev, CONFIG_BAUDRATE);

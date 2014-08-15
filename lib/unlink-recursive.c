@@ -1,4 +1,5 @@
 #include <common.h>
+#include <errno.h>
 #include <libbb.h>
 #include <fs.h>
 
@@ -52,5 +53,5 @@ int unlink_recursive(const char *path, char **failedpath)
 	if (!ret && failedpath)
 		*failedpath = unlink_recursive_failedpath;
 
-	return ret ? 0 : errno;
+	return ret ? 0 : -errno;
 }

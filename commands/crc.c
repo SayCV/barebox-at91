@@ -21,65 +21,21 @@
 #include <command.h>
 #include <fs.h>
 #include <getopt.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <xfuncs.h>
 #include <malloc.h>
-#include <linux/ctype.h>
+#include <libfile.h>
+#include <environment.h>
 
-static int file_crc(char* filename, ulong start, ulong size, ulong *crc,
-		    ulong *total)
+static int crc_from_file(const char* file, ulong *crc)
 {
-	int fd, now;
-	int ret = 0;
-	char *buf;
+	char * buf;
 
-	*total = 0;
-	*crc = 0;
+	buf= read_file(file, NULL);
 
-	fd = open(filename, O_RDONLY);
-	if (fd < 0) {
-		printf("open %s: %s\n", filename, errno_str());
-		return fd;
-	}
+	if (!buf)
+		return -ENOMEM;
 
-	if (start > 0) {
-		off_t lseek_ret;
-		errno = 0;
-		lseek_ret = lseek(fd, start, SEEK_SET);
-		if (lseek_ret == (off_t)-1 && errno) {
-			perror("lseek");
-			ret = -1;
-			goto out;
-		}
-	}
-
-	buf = xmalloc(4096);
-
-	while (size) {
-		now = min((ulong)4096, size);
-		now = read(fd, buf, now);
-		if (now < 0) {
-			ret = now;
-			perror("read");
-			goto out_free;
-		}
-		if (!now)
-			break;
-		*crc = crc32(*crc, buf, now);
-		size -= now;
-		*total += now;
-	}
-
-	printf ("CRC32 for %s 0x%08lx ... 0x%08lx ==> 0x%08lx",
-			filename, start, start + *total - 1, *crc);
-
-out_free:
-	free(buf);
-out:
-	close(fd);
-
-	return ret;
+	*crc = simple_strtoul(buf, NULL, 16);
+	return 0;
 }
 
 static int do_crc(int argc, char *argv[])
@@ -92,7 +48,7 @@ static int do_crc(int argc, char *argv[])
 #endif
 	int opt, err = 0, filegiven = 0, verify = 0;
 
-	while((opt = getopt(argc, argv, "f:F:v:")) > 0) {
+	while((opt = getopt(argc, argv, "f:F:v:V:")) > 0) {
 		switch(opt) {
 		case 'f':
 			filename = optarg;
@@ -107,6 +63,10 @@ static int do_crc(int argc, char *argv[])
 		case 'v':
 			verify = 1;
 			vcrc = simple_strtoul(optarg, NULL, 0);
+			break;
+		case 'V':
+			if (!crc_from_file(optarg, &vcrc))
+				verify = 1;
 			break;
 		default:
 			return COMMAND_ERROR_USAGE;
@@ -125,6 +85,9 @@ static int do_crc(int argc, char *argv[])
 
 	if (file_crc(filename, start, size, &crc, &total) < 0)
 		return 1;
+
+	printf("CRC32 for %s 0x%08lx ... 0x%08lx ==> 0x%08lx",
+			filename, (ulong)start, (ulong)start + total - 1, crc);
 
 #ifdef CONFIG_CMD_CRC_CMP
 	if (vfilename) {
@@ -145,18 +108,26 @@ static int do_crc(int argc, char *argv[])
 	return err;
 }
 
-BAREBOX_CMD_HELP_START(crc)
-BAREBOX_CMD_HELP_USAGE("crc32 [OPTION] [AREA]\n")
-BAREBOX_CMD_HELP_SHORT("Calculate a crc32 checksum of a memory area.\n")
-BAREBOX_CMD_HELP_OPT  ("-f <file>", "Use file instead of memory.\n")
+BAREBOX_CMD_HELP_START(crc32)
+BAREBOX_CMD_HELP_TEXT("Calculate a CRC32 checksum of a memory area.")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("Options:")
+BAREBOX_CMD_HELP_OPT ("-f FILE", "Use file instead of memory.")
 #ifdef CONFIG_CMD_CRC_CMP
-BAREBOX_CMD_HELP_OPT  ("-F <file>", "Use file to compare.\n")
+BAREBOX_CMD_HELP_OPT ("-F FILE", "Use file to compare.")
 #endif
-BAREBOX_CMD_HELP_OPT  ("-v <crc>",  "Verify\n")
+BAREBOX_CMD_HELP_OPT ("-v CRC",  "Verify")
+BAREBOX_CMD_HELP_OPT ("-V FILE", "Verify with CRC read from FILE")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(crc32)
 	.cmd		= do_crc,
-	.usage		= "crc32 checksum calculation",
-	BAREBOX_CMD_HELP(cmd_crc_help)
+	BAREBOX_CMD_DESC("CRC32 checksum calculation")
+	BAREBOX_CMD_OPTS("[-f"
+#ifdef CONFIG_CMD_CRC_CMP
+					  "F"
+#endif
+					  "vV] AREA")
+	BAREBOX_CMD_GROUP(CMD_GRP_MEM)
+	BAREBOX_CMD_HELP(cmd_crc32_help)
 BAREBOX_CMD_END

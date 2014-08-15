@@ -17,6 +17,7 @@
 #include <common.h>
 #include <init.h>
 #include <driver.h>
+#include <of.h>
 #include <spi/spi.h>
 #include <spi/flash.h>
 #include <xfuncs.h>
@@ -71,11 +72,6 @@
 /****************************************************************************/
 
 #define SPI_NAME_SIZE   32
-
-struct spi_device_id {
-	char name[SPI_NAME_SIZE];
-	unsigned long driver_data;
-};
 
 struct m25p {
 	struct spi_device	*spi;
@@ -272,8 +268,9 @@ static int erase_sector(struct m25p *flash, u32 offset, u32 command)
 static int m25p80_erase(struct mtd_info *mtd, struct erase_info *instr)
 {
 	struct m25p *flash = mtd_to_m25p(mtd);
-	u32 addr, len;
+	u32 addr;
 	uint32_t rem;
+	uint64_t len;
 
 	dev_dbg(&flash->spi->dev, "%s at 0x%llx, len %lld\n",
 			__func__, (long long)instr->addr,
@@ -617,7 +614,7 @@ struct flash_info {
  * more flash chips.  This current list focusses on newer chips, which
  * have been converging on command sets which including JEDEC ID.
  */
-static const struct spi_device_id m25p_ids[] = {
+static const struct platform_device_id m25p_ids[] = {
 	/* Atmel -- some are (confusingly) marketed as "DataFlash" */
 	{ "at25fs010",  INFO(0x1f6601, 0, 32 * 1024,   4, SECT_4K) },
 	{ "at25fs040",  INFO(0x1f6604, 0, 64 * 1024,   8, SECT_4K) },
@@ -662,8 +659,10 @@ static const struct spi_device_id m25p_ids[] = {
 	{ "mx25l25655e", INFO(0xc22619, 0, 64 * 1024, 512, 0) },
 
 	/* Micron */
-	{ "n25q128",  INFO(0x20ba18, 0, 64 * 1024, 256, 0) },
-	{ "n25q256a", INFO(0x20ba19, 0, 64 * 1024, 512, SECT_4K) },
+	{ "n25q064",     INFO(0x20ba17, 0, 64 * 1024,  128, 0) },
+	{ "n25q128a11",  INFO(0x20bb18, 0, 64 * 1024,  256, 0) },
+	{ "n25q128a13",  INFO(0x20ba18, 0, 64 * 1024,  256, 0) },
+	{ "n25q256a",    INFO(0x20ba19, 0, 64 * 1024,  512, SECT_4K) },
 
 	/* Spansion -- single (large) sector size only, at least
 	 * for the chips listed here (without boot sectors).
@@ -754,7 +753,7 @@ static const struct spi_device_id m25p_ids[] = {
 	{ },
 };
 
-static const struct spi_device_id *jedec_probe(struct spi_device *spi)
+static const struct platform_device_id *jedec_probe(struct spi_device *spi)
 {
 	int			tmp;
 	u8			code = OPCODE_RDID;
@@ -802,12 +801,15 @@ static const struct spi_device_id *jedec_probe(struct spi_device *spi)
 static int m25p_probe(struct device_d *dev)
 {
 	struct spi_device *spi = (struct spi_device *)dev->type_data;
-	const struct spi_device_id	*id = NULL;
+	const struct platform_device_id	*id = NULL;
 	struct flash_platform_data	*data;
 	struct m25p			*flash;
 	struct flash_info		*info = NULL;
 	unsigned			i;
 	unsigned			do_jdec_probe = 1;
+	char				*flashname = NULL;
+	const char			*typename = NULL;
+	int				device_id;
 
 	/* Platform data helps sort out which chip type we have, as
 	 * well as how this board partitions it.  If we don't have
@@ -815,12 +817,17 @@ static int m25p_probe(struct device_d *dev)
 	 * newer chips, even if we don't recognize the particular chip.
 	 */
 	data = dev->platform_data;
-	if (data && data->type) {
-		const struct spi_device_id *plat_id;
+	if (data && data->type)
+		typename = data->type;
+	else if (dev->id_entry)
+		typename = dev->id_entry->name;
+
+	if (typename) {
+		const struct platform_device_id *plat_id;
 
 		for (i = 0; i < ARRAY_SIZE(m25p_ids) - 1; i++) {
 			plat_id = &m25p_ids[i];
-			if (strcmp(data->type, plat_id->name))
+			if (strcmp(typename, plat_id->name))
 				continue;
 			break;
 		}
@@ -833,11 +840,11 @@ static int m25p_probe(struct device_d *dev)
 			if (!info->jedec_id)
 				do_jdec_probe = 0;
 		} else
-			dev_warn(&spi->dev, "unrecognized id %s\n", data->type);
+			dev_warn(&spi->dev, "unrecognized id %s\n", typename);
 	}
 
 	if (do_jdec_probe) {
-		const struct spi_device_id *jid;
+		const struct platform_device_id *jid;
 
 		jid = jedec_probe(spi);
 		if (IS_ERR(jid)) {
@@ -876,15 +883,24 @@ static int m25p_probe(struct device_d *dev)
 		write_sr(flash, 0);
 	}
 
-	if (data && data->name)
-		flash->mtd.name = data->name;
-	else
-		flash->mtd.name = "m25p";
+	device_id = DEVICE_ID_SINGLE;
+	if (dev->device_node) {
+		const char *alias = of_alias_get(dev->device_node);
+		if (alias)
+			flashname = xstrdup(alias);
+	} else if (data && data->name) {
+		flashname = data->name;
+	}
+
+	if (!flashname) {
+		device_id = DEVICE_ID_DYNAMIC;
+		flashname = "m25p";
+	}
 
 	flash->mtd.type = MTD_NORFLASH;
 	flash->mtd.writesize = 1;
 	flash->mtd.flags = MTD_CAP_NORFLASH;
-	flash->mtd.size = info->sector_size * info->n_sectors;
+	flash->mtd.size = (uint64_t)info->sector_size * info->n_sectors;
 	flash->mtd.erase = m25p80_erase;
 	flash->mtd.read = m25p80_read;
 
@@ -942,9 +958,7 @@ static int m25p_probe(struct device_d *dev)
 				flash->mtd.eraseregions[i].erasesize / 1024,
 				flash->mtd.eraseregions[i].numblocks);
 
-
-
-	return add_mtd_device(&flash->mtd, flash->mtd.name);
+	return add_mtd_device(&flash->mtd, flashname, device_id);
 }
 
 static __maybe_unused struct of_device_id m25p80_dt_ids[] = {
@@ -959,6 +973,7 @@ static struct driver_d m25p80_driver = {
 	.name	= "m25p80",
 	.probe	= m25p_probe,
 	.of_compatible = DRV_OF_COMPAT(m25p80_dt_ids),
+	.id_table = (struct platform_device_id *)m25p_ids,
 };
 device_spi_driver(m25p80_driver);
 

@@ -179,7 +179,7 @@ static int calc_bb_offset(struct mtd_info *mtd, struct mx28_fcb *fcb)
 	bb_mark_chunk = bb_mark_offset / chunk_total_size;
 	bb_mark_chunk_offs = bb_mark_offset - (bb_mark_chunk * chunk_total_size);
 	if (bb_mark_chunk_offs > chunk_data_size) {
-		printf("Unsupported ECC layout; BB mark resides in ECC data: %u\n",
+		printf("Unsupported ECC layout; BB mark resides in ECC data: %i\n",
 			bb_mark_chunk_offs);
 		return -EINVAL;
 	}
@@ -265,14 +265,14 @@ static int find_fcb(struct mtd_info *mtd, void *ref, int page)
 
 	chip->select_chip(mtd, 0);
 	chip->cmdfunc(mtd, NAND_CMD_READ0, 0x00, page);
-	ret = chip->ecc.read_page_raw(mtd, chip, buf);
+	ret = chip->ecc.read_page_raw(mtd, chip, buf, 1, page);
 	if (ret) {
-		printf("Failed to read FCB from page %u: %d\n", page, ret);
+		printf("Failed to read FCB from page %i: %d\n", page, ret);
 		return ret;
 	}
 	chip->select_chip(mtd, -1);
 	if (memcmp(buf, ref, mtd->writesize) == 0) {
-		printf("%s: Found FCB in page %u (%08x)\n", __func__,
+		printf("%s: Found FCB in page %i (%08x)\n", __func__,
 			page, page * mtd->writesize);
 		ret = 1;
 	}
@@ -306,7 +306,7 @@ static int write_fcb(struct mtd_info *mtd, void *buf, int block)
 
 	printf("Writing FCB to block %08x\n", block);
 	chip->select_chip(mtd, 0);
-	ret = chip->write_page(mtd, chip, buf, page, 0, 1);
+	ret = chip->write_page(mtd, chip, 0, mtd->erasesize, buf, 1, page, 0, 1);
 	if (ret) {
 		printf("Failed to write FCB to block %08x: %d\n", block, ret);
 	}
@@ -376,7 +376,7 @@ int update_bcb(int argc, char *argv[])
 
 		ret = write_fcb(mtd, buf, block);
 		if (ret) {
-			printf("Failed to write FCB to block %u\n", block);
+			printf("Failed to write FCB to block %i\n", block);
 			return ret;
 		}
 
@@ -387,13 +387,14 @@ int update_bcb(int argc, char *argv[])
 }
 
 BAREBOX_CMD_HELP_START(bcb)
-BAREBOX_CMD_HELP_USAGE("bcb <first_bootstream> [second_bootstream]\n")
-BAREBOX_CMD_HELP_SHORT("Write a BCB to NAND flash which an MX23/28 needs to boot.\n")
-BAREBOX_CMD_HELP_TEXT ("Example: bcb nand0.bootstream\n")
+BAREBOX_CMD_HELP_TEXT("Write a BCB to NAND flash which an MX23/28 needs to boot.")
+BAREBOX_CMD_HELP_TEXT("Example: bcb nand0.bootstream")
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(bcb)
 	.cmd = update_bcb,
-	.usage = "Writes a MX23/28 BCB data structure to flash",
+	BAREBOX_CMD_DESC("writes a i.MX23/28 BCB data structure to flash")
+	BAREBOX_CMD_OPTS("BOOTSTREAM [BOOTSTREAM]")
+	BAREBOX_CMD_GROUP(CMD_GRP_HWMANIP)
 	BAREBOX_CMD_HELP(cmd_bcb_help)
 BAREBOX_CMD_END

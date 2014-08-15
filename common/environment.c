@@ -48,7 +48,29 @@ struct action_data {
 };
 #define PAD4(x) ((x + 3) & ~3)
 
-char *default_environment_path = "/dev/env0";
+#ifdef __BAREBOX__
+static char *default_environment_path = "/dev/env0";
+
+void default_environment_path_set(char *path)
+{
+	default_environment_path = path;
+}
+
+char *default_environment_path_get(void)
+{
+	return default_environment_path;
+}
+#else
+static inline int protect(int fd, size_t count, unsigned long offset, int prot)
+{
+	return 0;
+}
+
+static inline int erase(int fd, size_t count, unsigned long offset)
+{
+	return 0;
+}
+#endif
 
 static int file_size_action(const char *filename, struct stat *statbuf,
 			    void *userdata, int depth)
@@ -145,26 +167,31 @@ out:
  * Make the current environment persistent
  * @param[in] filename where to store
  * @param[in] dirname what to store (all files in this dir)
+ * @param[in] flags superblock flags (refer ENVFS_FLAGS_* macros)
  * @return 0 on success, anything else in case of failure
  *
  * Note: This function will also be used on the host! See note in the header
  * of this file.
  */
-int envfs_save(char *filename, char *dirname)
+int envfs_save(const char *filename, const char *dirname, unsigned flags)
 {
 	struct envfs_super *super;
 	int envfd, size, ret;
 	struct action_data data;
-	void *buf = NULL;
+	void *buf = NULL, *wbuf;
 
 	data.writep = NULL;
 	data.base = dirname;
 
-	/* first pass: calculate size */
-	recursive_action(dirname, ACTION_RECURSE, file_size_action,
-			 NULL, &data, 0);
+	if (flags & ENVFS_FLAGS_FORCE_BUILT_IN) {
+		size = 0; /* force no content */
+	} else {
+		/* first pass: calculate size */
+		recursive_action(dirname, ACTION_RECURSE, file_size_action,
+				NULL, &data, 0);
 
-	size = (unsigned long)data.writep;
+		size = (unsigned long)data.writep;
+	}
 
 	buf = xzalloc(size + sizeof(struct envfs_super));
 	data.writep = buf + sizeof(struct envfs_super);
@@ -174,25 +201,60 @@ int envfs_save(char *filename, char *dirname)
 	super->major = ENVFS_MAJOR;
 	super->minor = ENVFS_MINOR;
 	super->size = ENVFS_32(size);
+	super->flags = ENVFS_32(flags);
 
-	/* second pass: copy files to buffer */
-	recursive_action(dirname, ACTION_RECURSE, file_save_action,
-			 NULL, &data, 0);
+	if (!(flags & ENVFS_FLAGS_FORCE_BUILT_IN)) {
+		/* second pass: copy files to buffer */
+		recursive_action(dirname, ACTION_RECURSE, file_save_action,
+				NULL, &data, 0);
+	}
 
 	super->crc = ENVFS_32(crc32(0, buf + sizeof(struct envfs_super), size));
 	super->sb_crc = ENVFS_32(crc32(0, buf, sizeof(struct envfs_super) - 4));
 
 	envfd = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 	if (envfd < 0) {
-		printf("Open %s %s\n", filename, errno_str());
-		ret = envfd;
+		printf("could not open %s: %s\n", filename, errno_str());
+		ret = -errno;
 		goto out1;
 	}
 
-	if (write(envfd, buf, size  + sizeof(struct envfs_super)) <
-			sizeof(struct envfs_super)) {
-		perror("write");
-		ret = -1;	/* FIXME */
+	ret = protect(envfd, ~0, 0, 0);
+
+	/* ENOSYS is no error here, many devices do not need it */
+	if (ret && errno != ENOSYS) {
+		printf("could not unprotect %s: %s\n", filename, errno_str());
+		goto out;
+	}
+
+	ret = erase(envfd, ~0, 0);
+
+	/* ENOSYS is no error here, many devices do not need it */
+	if (ret && errno != ENOSYS) {
+		printf("could not erase %s: %s\n", filename, errno_str());
+		goto out;
+	}
+
+	size += sizeof(struct envfs_super);
+
+	wbuf = buf;
+
+	while (size) {
+		ssize_t now = write(envfd, wbuf, size);
+		if (now < 0) {
+			ret = -errno;
+			goto out;
+		}
+
+		wbuf += now;
+		size -= now;
+	}
+
+	ret = protect(envfd, ~0, 0, 1);
+
+	/* ENOSYS is no error here, many devices do not need it */
+	if (ret && errno != ENOSYS) {
+		printf("could not protect %s: %s\n", filename, errno_str());
 		goto out;
 	}
 
@@ -206,78 +268,52 @@ out1:
 }
 EXPORT_SYMBOL(envfs_save);
 
-/**
- * Restore the last environment into the current one
- * @param[in] filename from where to restore
- * @param[in] dir where to store the last content
- * @return 0 on success, anything else in case of failure
- *
- * Note: This function will also be used on the host! See note in the header
- * of this file.
- */
-int envfs_load(char *filename, char *dir, unsigned flags)
+static int envfs_check_super(struct envfs_super *super, size_t *size)
 {
-	struct envfs_super super;
-	void *buf = NULL, *buf_free = NULL;
-	int envfd;
+	if (ENVFS_32(super->magic) != ENVFS_MAGIC) {
+		printf("envfs: wrong magic\n");
+		return -EIO;
+	}
+
+	if (crc32(0, super, sizeof(*super) - 4) != ENVFS_32(super->sb_crc)) {
+		printf("wrong crc on env superblock\n");
+		return -EIO;
+	}
+
+	if (super->major < ENVFS_MAJOR)
+		printf("envfs version %d.%d loaded into %d.%d\n",
+			super->major, super->minor,
+			ENVFS_MAJOR, ENVFS_MINOR);
+
+	*size = ENVFS_32(super->size);
+
+	return 0;
+}
+
+static int envfs_check_data(struct envfs_super *super, const void *buf, size_t size)
+{
+	uint32_t crc;
+
+	crc = crc32(0, buf, size);
+	if (crc != ENVFS_32(super->crc)) {
+		printf("wrong crc on env\n");
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int envfs_load_data(struct envfs_super *super, void *buf, size_t size,
+		const char *dir, unsigned flags)
+{
 	int fd, ret = 0;
 	char *str, *tmp;
 	int headerlen_full;
-	unsigned long size;
 	/* for envfs < 1.0 */
 	struct envfs_inode_end inode_end_dummy;
 
 	inode_end_dummy.mode = ENVFS_32(S_IRWXU | S_IRWXG | S_IRWXO);
 	inode_end_dummy.magic = ENVFS_32(ENVFS_INODE_END_MAGIC);
-
-	envfd = open(filename, O_RDONLY);
-	if (envfd < 0) {
-		printf("Open %s %s\n", filename, errno_str());
-		return -1;
-	}
-
-	/* read superblock */
-	ret = read(envfd, &super, sizeof(struct envfs_super));
-	if ( ret < sizeof(struct envfs_super)) {
-		perror("read");
-		ret = -errno;
-		goto out;
-	}
-
-	if ( ENVFS_32(super.magic) != ENVFS_MAGIC) {
-		printf("envfs: wrong magic on %s\n", filename);
-		ret = -EIO;
-		goto out;
-	}
-
-	if (crc32(0, (unsigned char *)&super, sizeof(struct envfs_super) - 4)
-		   != ENVFS_32(super.sb_crc)) {
-		printf("wrong crc on env superblock\n");
-		ret = -EIO;
-		goto out;
-	}
-
-	size = ENVFS_32(super.size);
-	buf = xmalloc(size);
-	buf_free = buf;
-	ret = read(envfd, buf, size);
-	if (ret < size) {
-		perror("read");
-		ret = -errno;
-		goto out;
-	}
-
-	if (crc32(0, (unsigned char *)buf, size)
-		     != ENVFS_32(super.crc)) {
-		printf("wrong crc on env\n");
-		ret = -EIO;
-		goto out;
-	}
-
-	if (super.major < ENVFS_MAJOR)
-		printf("envfs version %d.%d loaded into %d.%d\n",
-			super.major, super.minor,
-			ENVFS_MAJOR, ENVFS_MINOR);
 
 	while (size) {
 		struct envfs_inode *inode;
@@ -288,14 +324,14 @@ int envfs_load(char *filename, char *dir, unsigned flags)
 		buf += sizeof(struct envfs_inode);
 
 		if (ENVFS_32(inode->magic) != ENVFS_INODE_MAGIC) {
-			printf("envfs: wrong magic on %s\n", filename);
+			printf("envfs: wrong magic\n");
 			ret = -EIO;
 			goto out;
 		}
 		inode_size = ENVFS_32(inode->size);
 		inode_headerlen = ENVFS_32(inode->headerlen);
 		namelen = strlen(inode->data) + 1;
-		if (super.major < 1)
+		if (super->major < 1)
 			inode_end = &inode_end_dummy;
 		else
 			inode_end = (struct envfs_inode_end *)(buf + PAD4(namelen));
@@ -312,7 +348,7 @@ int envfs_load(char *filename, char *dir, unsigned flags)
 		buf += headerlen_full;
 
 		if (ENVFS_32(inode_end->magic) != ENVFS_INODE_END_MAGIC) {
-			printf("envfs: wrong inode_end_magic on %s\n", filename);
+			printf("envfs: wrong inode_end_magic\n");
 			ret = -EIO;
 			goto out;
 		}
@@ -358,48 +394,113 @@ skip:
 
 	ret = 0;
 out:
-	close(envfd);
-	if (buf_free)
-		free(buf_free);
 	return ret;
 }
 
-#ifdef __BAREBOX__
-/**
- * Try to register an environment storage on a device's partition
- * @return 0 on success
- *
- * We rely on the existence of a usable storage device, already attached to
- * our system, to get something like a persistent memory for our environment.
- * We need to specify the partition number to use on this device.
- * @param[in] devname Name of the device
- * @param[in] partnr Partition number
- * @return 0 on success, anything else in case of failure
- */
-
-int envfs_register_partition(const char *devname, unsigned int partnr)
+int envfs_load_from_buf(void *buf, int len, const char *dir, unsigned flags)
 {
-	struct cdev *cdev;
-	char *partname;
+	int ret;
+	size_t size;
+	struct envfs_super *super = buf;
 
-	if (!devname)
-		return -EINVAL;
+	buf = super + 1;
 
-	cdev = cdev_by_name(devname);
-	if (cdev == NULL) {
-		pr_err("No %s present\n", devname);
-		return -ENODEV;
-	}
-	partname = asprintf("%s.%d", devname, partnr);
-	cdev = cdev_by_name(partname);
-	if (cdev == NULL) {
-		pr_err("No %s partition available\n", partname);
-		pr_info("Please create the partition %s to store the env\n", partname);
-		return -ENODEV;
-	}
+	ret = envfs_check_super(super, &size);
+	if (ret)
+		return ret;
 
-	return devfs_add_partition(partname, 0, cdev->size,
-						DEVFS_PARTITION_FIXED, "env0");
+	ret = envfs_check_data(super, buf, size);
+	if (ret)
+		return ret;
+
+	ret = envfs_load_data(super, buf, size, dir, flags);
+
+	return ret;
 }
-EXPORT_SYMBOL(envfs_register_partition);
-#endif
+
+/**
+ * Restore the last environment into the current one
+ * @param[in] filename from where to restore
+ * @param[in] dir where to store the last content
+ * @return 0 on success, anything else in case of failure
+ *
+ * Note: This function will also be used on the host! See note in the header
+ * of this file.
+ */
+int envfs_load(const char *filename, const char *dir, unsigned flags)
+{
+	struct envfs_super super;
+	void *buf = NULL, *rbuf;
+	int envfd;
+	int ret = 0;
+	size_t size, rsize;
+
+	envfd = open(filename, O_RDONLY);
+	if (envfd < 0) {
+		printf("environment load %s: %s\n", filename, errno_str());
+		if (errno == ENOENT)
+			printf("Maybe you have to create the partition.\n");
+		return -1;
+	}
+
+	/* read superblock */
+	ret = read(envfd, &super, sizeof(struct envfs_super));
+	if ( ret < sizeof(struct envfs_super)) {
+		perror("read");
+		ret = -errno;
+		goto out;
+	}
+
+	ret = envfs_check_super(&super, &size);
+	if (ret)
+		goto out;
+
+	if (super.flags & ENVFS_FLAGS_FORCE_BUILT_IN) {
+		printf("found force-builtin environment, using defaultenv\n");
+		ret = defaultenv_load(dir, 0);
+		if (ret)
+			printf("failed to load default environment: %s\n",
+					strerror(-ret));
+		goto out;
+	}
+
+	buf = xmalloc(size);
+
+	rbuf = buf;
+	rsize = size;
+
+	while (rsize) {
+		ssize_t now;
+
+		now = read(envfd, rbuf, rsize);
+		if (now < 0) {
+			perror("read");
+			ret = -errno;
+			goto out;
+		}
+
+		if (!now) {
+			printf("%s: premature end of file\n", filename);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		rbuf += now;
+		rsize -= now;
+	}
+
+	ret = envfs_check_data(&super, buf, size);
+	if (ret)
+		goto out;
+
+	ret = envfs_load_data(&super, buf, size, dir, flags);
+	if (ret)
+		goto out;
+
+	ret = 0;
+out:
+	close(envfd);
+	free(buf);
+
+	return ret;
+}

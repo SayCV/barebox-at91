@@ -21,12 +21,6 @@ static struct NS16550_plat serial_plat = {
 
 struct device_d *omap_add_uart(int id, unsigned long base)
 {
-	return add_ns16550_device(id, base, 1024,
-			IORESOURCE_MEM_8BIT, &serial_plat);
-}
-
-struct device_d *omap_add_i2c(int id, unsigned long base, void *pdata)
-{
-	return add_generic_device("i2c-omap", id, NULL, base, SZ_4K,
-			   IORESOURCE_MEM, pdata);
+	return add_generic_device("omap-uart", id, NULL, base, 1024,
+				  IORESOURCE_MEM | IORESOURCE_MEM_8BIT, &serial_plat);
 }

@@ -14,8 +14,10 @@
 #include <io.h>
 #include <init.h>
 #include <sizes.h>
+#include <mach/generic.h>
 #include <mach/omap4-mux.h>
 #include <mach/omap4-silicon.h>
+#include <mach/omap4-generic.h>
 #include <mach/omap4-clock.h>
 #include <mach/syslib.h>
 #include <asm/barebox-arm.h>
@@ -48,8 +50,7 @@ static noinline void archosg9_init_lowlevel(void)
 
 	set_muxconf_regs();
 
-	/* Set VCORE1 = 1.3 V, VCORE2 = VCORE3 = 1.21V */
-	omap4_scale_vcores(TPS62361_VSEL0_GPIO);
+	omap4460_scale_vcores(TPS62361_VSEL0_GPIO, 1380);
 
 	/* Enable all clocks */
 	omap4_enable_all_clocks();
@@ -65,8 +66,10 @@ static noinline void archosg9_init_lowlevel(void)
 	omap4_ddr_init(&ddr_regs_400_mhz_2cs, &core);
 }
 
-void __naked __bare_init barebox_arm_reset_vector(void)
+void __naked __bare_init barebox_arm_reset_vector(uint32_t *data)
 {
+	omap4_save_bootinfo(data);
+
 	arm_cpu_lowlevel_init();
 
 	if (get_pc() > 0x80000000)
@@ -76,5 +79,5 @@ void __naked __bare_init barebox_arm_reset_vector(void)
 
 	archosg9_init_lowlevel();
 out:
-	barebox_arm_entry(0x80000000, SZ_1G, 0);
+	barebox_arm_entry(0x80000000, SZ_1G, NULL);
 }

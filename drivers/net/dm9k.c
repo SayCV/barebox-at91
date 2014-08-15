@@ -541,7 +541,6 @@ static int dm9k_check_for_rx_packet(struct dm9k *priv)
 		return 0;	/* no packet */
 
 	dev_dbg(dev, "Packet present\n");
-	dm9k_iow(priv, DM9K_ISR, ISR_PR); /* clear PR status latched in bit 0 */
 	return 1; /* packet present */
 }
 
@@ -587,8 +586,10 @@ static int dm9k_eth_rx(struct eth_device *edev)
 		return 0;	/* no data present */
 
 	do {
-		if (!dm9k_validate_entry(priv))
+		if (!dm9k_validate_entry(priv)) {
+			dm9k_iow(priv, DM9K_ISR, ISR_PR); /* clear PR status latched in bit 0 */
 			return 0;
+		}
 
 		/* assume this packet is valid */
 		p_valid = true;
@@ -633,7 +634,8 @@ static int dm9k_eth_rx(struct eth_device *edev)
 			dev_dbg(dev, "Receiving packet\n");
 			dm9k_rd(priv->buswidth, priv->iodata, priv->pckt, rx_len);
 			dev_dbg(dev, "passing %u bytes packet to upper layer\n", rx_len);
-			net_receive(priv->pckt, rx_len);
+			net_receive(edev, priv->pckt, rx_len);
+			return 0;
 		} else {
 			dev_dbg(dev, "Discarding packet\n");
 			dm9k_dump(priv->buswidth, priv->iodata, rx_len); /* discard packet */
@@ -722,7 +724,11 @@ static int dm9k_probe(struct device_d *dev)
 
 	priv->buswidth = dev->resource[0].flags & IORESOURCE_MEM_TYPE_MASK;
 	priv->iodata = dev_request_mem_region(dev, 1);
+	if (!priv->iodata)
+		return -EBUSY;
 	priv->iobase = dev_request_mem_region(dev, 0);
+	if (!priv->iobase)
+		return -EBUSY;
 	priv->srom = pdata->srom;
 
 	edev->init = dm9k_init_dev;

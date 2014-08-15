@@ -23,6 +23,7 @@
 #include <mach/at91sam9_smc.h>
 #include <gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91_rstc.h>
 #include <linux/clk.h>
 
@@ -247,7 +248,6 @@ static int at91sam9260ek_devices_init(void)
 	ek_add_device_buttons();
 	ek_add_led();
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	ek_set_board_type();
 
 	devfs_add_partition("nand0", 0x00000, SZ_128K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
@@ -265,7 +265,22 @@ device_initcall(at91sam9260ek_devices_init);
 
 static int at91sam9260ek_console_init(void)
 {
+	if (machine_is_at91sam9g20ek()) {
+		barebox_set_model("Atmel at91sam9g20-ek");
+		barebox_set_hostname("at91sam9g20-ek");
+	} else {
+		barebox_set_model("Atmel at91sam9260-ek");
+		barebox_set_hostname("at91sam9260-ek");
+	}
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 console_initcall(at91sam9260ek_console_init);
+
+static int at91sam9260ek_main_clock(void)
+{
+	at91_set_main_clock(18432000);
+	return 0;
+}
+pure_initcall(at91sam9260ek_main_clock);

@@ -22,6 +22,7 @@
 #include <malloc.h>
 #include <xfuncs.h>
 #include <init.h>
+#include <of.h>
 
 #include <i2c/i2c.h>
 
@@ -242,8 +243,8 @@ EXPORT_SYMBOL(i2c_write_reg);
  *
  * Returns the new device, or NULL.
  */
-struct i2c_client *i2c_new_device(struct i2c_adapter *adapter,
-				  struct i2c_board_info *chip)
+static struct i2c_client *i2c_new_device(struct i2c_adapter *adapter,
+					 struct i2c_board_info *chip)
 {
 	struct i2c_client *client;
 	int status;
@@ -268,9 +269,8 @@ struct i2c_client *i2c_new_device(struct i2c_adapter *adapter,
 
 	return client;
 }
-EXPORT_SYMBOL(i2c_new_device);
 
-void of_i2c_register_devices(struct i2c_adapter *adap)
+static void of_i2c_register_devices(struct i2c_adapter *adap)
 {
 	struct device_node *n;
 
@@ -278,7 +278,7 @@ void of_i2c_register_devices(struct i2c_adapter *adap)
 	if (!IS_ENABLED(CONFIG_OFDEVICE) || !adap->dev.device_node)
 		return;
 
-	device_node_for_nach_child(adap->dev.device_node, n) {
+	for_each_child_of_node(adap->dev.device_node, n) {
 		struct i2c_board_info info = {};
 		struct i2c_client *result;
 		const __be32 *addr;
@@ -405,6 +405,17 @@ struct i2c_adapter *i2c_get_adapter(int busnum)
 	return NULL;
 }
 
+struct i2c_adapter *of_find_i2c_adapter_by_node(struct device_node *node)
+{
+	struct i2c_adapter *adap;
+
+	list_for_each_entry(adap, &adapter_list, list)
+		if (adap->dev.device_node == node)
+			return adap;
+
+	return NULL;
+}
+
 /**
  * i2c_add_numbered_adapter - declare i2c adapter, use static bus number
  * @adapter: the adapter to register (with adap->nr initialized)
@@ -454,26 +465,6 @@ int i2c_add_numbered_adapter(struct i2c_adapter *adapter)
 }
 EXPORT_SYMBOL(i2c_add_numbered_adapter);
 
-static int i2c_match(struct device_d *dev, struct driver_d *drv)
-{
-	if (!strcmp(dev->name, drv->name))
-		return 0;
-
-	if (drv->id_table) {
-		struct platform_device_id *id = drv->id_table;
-
-		while (id->name) {
-			if (!strcmp(id->name, dev->name)) {
-				dev->id_entry = id;
-				return 0;
-			}
-			id++;
-		}
-	}
-
-	return -1;
-}
-
 static int i2c_probe(struct device_d *dev)
 {
 	return dev->driver->probe(dev);
@@ -486,7 +477,7 @@ static void i2c_remove(struct device_d *dev)
 
 struct bus_type i2c_bus = {
 	.name = "i2c",
-	.match = i2c_match,
+	.match = device_match_of_modalias,
 	.probe = i2c_probe,
 	.remove = i2c_remove,
 };

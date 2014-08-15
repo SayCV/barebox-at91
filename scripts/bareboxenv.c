@@ -35,29 +35,10 @@
 
 #define debug(...)
 
-void *xmalloc(size_t size)
-{
-	void *p = NULL;
-
-	if (!(p = malloc(size))) {
-		printf("ERROR: out of memory\n");
-		exit(1);
-	}
-
-	return p;
-}
-
-void *xzalloc(size_t size)
-{
-	void *p = xmalloc(size);
-	memset(p, 0, size);
-	return p;
-}
-
 /* Find out if the last character of a string matches the one given.
  * Don't underrun the buffer if the string length is 0.
  */
-char* last_char_is(const char *s, int c)
+static char *last_char_is(const char *s, int c)
 {
 	if (s && *s) {
 		size_t sz = strlen(s) - 1;
@@ -85,7 +66,7 @@ int recursive_action(const char *fileName, unsigned flags,
 /* concatenate path and file name to new allocation buffer,
  * not adding '/' if path name already has '/'
  */
-char *concat_path_file(const char *path, const char *filename)
+static char *concat_path_file(const char *path, const char *filename)
 {
 	char *lc, *str;
 
@@ -107,7 +88,7 @@ char *concat_path_file(const char *path, const char *filename)
  * and skipping "." and ".." directory entries
  */
 
-char *concat_subpath_file(const char *path, const char *f)
+static char *concat_subpath_file(const char *path, const char *f)
 {
 	if (f && DOT_OR_DOTDOT(f))
 		return NULL;
@@ -120,7 +101,7 @@ char *concat_subpath_file(const char *path, const char *f)
 #include "../lib/make_directory.c"
 #include "../common/environment.c"
 
-void usage(char *prgname)
+static void usage(char *prgname)
 {
 	printf( "Usage : %s [OPTION] DIRECTORY FILE\n"
 		"Load a barebox environment sector into a directory or\n"
@@ -128,6 +109,7 @@ void usage(char *prgname)
 		"\n"
 		"options:\n"
 		"  -s        save (directory -> environment sector)\n"
+		"  -z        force the built-in default environment at startup\n"
 		"  -l        load (environment sector -> directory)\n"
 		"  -p <size> pad output file to given size\n"
 		"  -v        verbose\n",
@@ -139,9 +121,10 @@ int main(int argc, char *argv[])
 	int opt;
 	int save = 0, load = 0, pad = 0, err = 0, fd;
 	char *filename = NULL, *dirname = NULL;
+	unsigned envfs_flags = 0;
 	int verbose = 0;
 
-	while((opt = getopt(argc, argv, "slp:v")) != -1) {
+	while((opt = getopt(argc, argv, "slp:vz")) != -1) {
 		switch (opt) {
 		case 's':
 			save = 1;
@@ -151,6 +134,10 @@ int main(int argc, char *argv[])
 			break;
 		case 'p':
 			pad = strtoul(optarg, NULL, 0);
+			break;
+		case 'z':
+			envfs_flags |= ENVFS_FLAGS_FORCE_BUILT_IN;
+			save = 1;
 			break;
 		case 'v':
 			verbose = 1;
@@ -200,7 +187,7 @@ int main(int argc, char *argv[])
 		if (verbose)
 			printf("saving contents of %s to file %s\n", dirname, filename);
 
-		err = envfs_save(filename, dirname);
+		err = envfs_save(filename, dirname, envfs_flags);
 
 		if (verbose && err)
 			printf("saving env failed: %d\n", err);

@@ -15,6 +15,7 @@
  */
 
 #include <config.h>
+#include <sizes.h>
 #include <mach/s3c-iomap.h>
 
 	.section ".text_bare_init.s3c24x0_disable_wd","ax"
@@ -29,14 +30,6 @@ s3c24x0_disable_wd:
 	mov r1, #0x0
 	str r1, [r0]
 	mov pc, lr
-
-/**
-@page dev_s3c24xx_wd_handling Watchdog handling
-
-The watchdog must be disabled very early, because if it resets the system
-it is still active and will continue to reset the system. So, call this
-routine very early in your board_init_lowlevel routine.
-*/
 
 /*
  * S3C2410 PLL configuration
@@ -258,7 +251,7 @@ s3c24x0_nand_boot:
 	beq 2f
 	mov pc, lr	/* NOR case: nothing to do here */
 
-2:	ldr sp, =TEXT_BASE	/* Setup a temporary stack in SDRAM */
+2:	ldr sp, =(TEXT_BASE - SZ_2M)	/* Setup a temporary stack in SDRAM */
 /*
  * We still run at a location we are not linked to. But lets still running
  * from the internal SRAM, this may speed up the boot
@@ -269,7 +262,7 @@ s3c24x0_nand_boot:
 /*
  * Adjust the return address to the correct address in SDRAM
  */
-	ldr r1, =TEXT_BASE
+	ldr r1, =(TEXT_BASE - SZ_2M)
 	add lr, lr, r1
 
 	mov pc, lr

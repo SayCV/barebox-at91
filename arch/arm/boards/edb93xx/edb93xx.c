@@ -24,6 +24,7 @@
 #include <partition.h>
 #include <asm/armlinux.h>
 #include <io.h>
+#include <malloc.h>
 #include <generated/mach-types.h>
 #include <mach/ep93xx-regs.h>
 #include "edb93xx.h"
@@ -71,8 +72,6 @@ static int ep93xx_devices_init(void)
 	add_generic_device("ep93xx_eth", DEVICE_ID_DYNAMIC, NULL, 0, 0, IORESOURCE_MEM,
 			NULL);
 
-	armlinux_set_bootparams((void *)CONFIG_EP93XX_SDRAM_BANK0_BASE + 0x100);
-
 	armlinux_set_architecture(MACH_TYPE);
 
 	return 0;
@@ -83,6 +82,7 @@ device_initcall(ep93xx_devices_init);
 static int edb93xx_console_init(void)
 {
 	struct syscon_regs *syscon = (struct syscon_regs *)SYSCON_BASE;
+	char *shortname, *board;
 
 	/*
 	 * set UARTBAUD bit to drive UARTs with 14.7456MHz instead of
@@ -97,6 +97,30 @@ static int edb93xx_console_init(void)
 	value |= DEVCFG_U1EN;
 	writel(0xAA, &syscon->sysswlock);
 	writel(value, &syscon->devicecfg);
+
+	if (IS_ENABLED(CONFIG_MACH_EDB9301))
+		shortname = "EDB9301";
+	else if (IS_ENABLED(CONFIG_MACH_EDB9302))
+		shortname = "EDB9302";
+	else if (IS_ENABLED(CONFIG_MACH_EDB9302))
+		shortname = "EDB9302A";
+	else if (IS_ENABLED(CONFIG_MACH_EDB9307))
+		shortname = "EDB9307";
+	else if (IS_ENABLED(CONFIG_MACH_EDB9307A))
+		shortname = "EDB9307A";
+	else if (IS_ENABLED(CONFIG_MACH_EDB9312))
+		shortname = "EDB9312";
+	else if (IS_ENABLED(CONFIG_MACH_EDB9315))
+		shortname = "EDB9315";
+	else if (IS_ENABLED(CONFIG_MACH_EDB9315A))
+		shortname = "EDB9315A";
+	else
+		shortname = "unknown";
+
+	board = asprintf("Cirrus Logic %s", shortname);
+	barebox_set_model(board);
+	free(board);
+	barebox_set_hostname(shortname);
 
 	add_generic_device("pl010_serial", DEVICE_ID_DYNAMIC, NULL, UART1_BASE, 4096,
 			   IORESOURCE_MEM, NULL);

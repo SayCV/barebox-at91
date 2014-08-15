@@ -29,7 +29,6 @@
 #include <asm/system.h>
 #include <asm/memory.h>
 #include <asm-generic/memory_layout.h>
-#include <asm/system_info.h>
 #include <asm/cputype.h>
 #include <asm/cache.h>
 #include <asm/ptrace.h>
@@ -125,7 +124,7 @@ coredevice_initcall(arm_request_stack);
 static void thumb2_execute(void *func, int argc, char *argv[])
 {
 	/*
-	 * Switch back to arm mode before executing external
+	 * Switch back to ARM mode before executing external
 	 * programs.
 	 */
 	__asm__ __volatile__ (
@@ -145,17 +144,4 @@ static int execute_init(void)
 	return 0;
 }
 postcore_initcall(execute_init);
-#endif
-
-#ifdef ARM_MULTIARCH
-
-int __cpu_architecture;
-
-int __pure cpu_architecture(void)
-{
-	if(__cpu_architecture == CPU_ARCH_UNKNOWN)
-		__cpu_architecture = arm_early_get_cpu_architecture();
-
-	return __cpu_architecture;
-}
 #endif

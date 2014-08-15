@@ -429,7 +429,13 @@
 
 #define SPRN_TLB0CFG   0x2B0   /* TLB 0 Config Register */
 #define SPRN_TLB1CFG   0x2B1   /* TLB 1 Config Register */
+#define SPRN_TLB1PS	0x159	/* TLB 1 Page Size Register */
+#define TLBnCFG_NENTRY_MASK	0x00000fff
 #define SPRN_MMUCSR0	0x3f4	/* MMU control and status register 0 */
+#define SPRN_MMUCFG	0x3f7	/* MMU Configuration Register */
+#define MMUCFG_MAVN	0x00000003	/* MMU Architecture Version Number */
+#define MMUCFG_MAVN_V1	0x00000000	/* v1.0 */
+#define MMUCFG_MAVN_V2	0x00000001	/* v2.0 */
 #define SPRN_MAS0       0x270   /* MMU Assist Register 0 */
 #define SPRN_MAS1       0x271   /* MMU Assist Register 1 */
 #define SPRN_MAS2       0x272   /* MMU Assist Register 2 */
@@ -465,6 +471,7 @@
 #define SPRN_MSSCRO	0x3f6
 #endif
 
+#define SPRN_HDBCR0	0x3d0
 
 /* Short-hand versions for a number of the above SPRNs */
 
@@ -844,7 +851,8 @@
 #define SVR_MIN(svr)	(((svr) >>  0) & 0xF)	/* Minor revision field*/
 
 /* Some parts define SVR[0:23] as the SOC version */
-#define SVR_SOC_VER(svr) (((svr) >> 8) & 0xFFFFFF)	/* SOC Version fields */
+#define SVR_SOC_VER(svr) (((svr) >> 8) & 0xFFF7FF)	/* SOC w/o E bit */
+#define IS_E_PROCESSOR(svr)    ((svr) & 0x80000)
 
 /*
  * SVR_VER() Version Values
@@ -857,6 +865,10 @@
 #define SVR_8548	0x8031
 #define SVR_8548_E	0x8039
 #define SVR_8641	0x8090
+#define SVR_8544	0x803401
+#define SVR_8544_E	0x803C01
+#define SVR_P1010	0x80F100
+#define SVR_P1022	0x80E600
 #define SVR_P2020	0x80E200
 #define SVR_P2020_E	0x80EA00
 
@@ -965,8 +977,11 @@ struct cpu_type {
 struct cpu_type *identify_cpu(u32 ver);
 
 #if defined(CONFIG_MPC85xx)
+#define LINUX_TLB1_MAX_ADDR	((void *)(64 << 20))
 #define CPU_TYPE_ENTRY(n, v, nc) \
 	{ .name = #n, .soc_ver = SVR_##v, .num_cores = (nc), }
+#else
+#define LINUX_TLB1_MAX_ADDR	((void *)0xffffffff)
 #endif
 #ifndef CONFIG_MACH_SPECIFIC
 extern int _machine;

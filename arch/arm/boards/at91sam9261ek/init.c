@@ -24,7 +24,7 @@
 #include <fs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
@@ -32,6 +32,7 @@
 #include <mach/board.h>
 #include <gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91sam9_smc.h>
 #include <dm9000.h>
 #include <gpio_keys.h>
@@ -233,13 +234,13 @@ static void ek_add_device_lcdc(void) {}
 #ifdef CONFIG_KEYBOARD_GPIO
 struct gpio_keys_button keys[] = {
 	{
-		.code = KEY_UP,
+		.code = BB_KEY_UP,
 		.gpio = AT91_PIN_PA26,
 	}, {
-		.code = KEY_DOWN,
+		.code = BB_KEY_DOWN,
 		.gpio = AT91_PIN_PA25,
 	}, {
-		.code = KEY_ENTER,
+		.code = BB_KEY_ENTER,
 		.gpio = AT91_PIN_PA24,
 	},
 };
@@ -388,7 +389,6 @@ static int at91sam9261ek_devices_init(void)
 	devfs_add_partition("nand0", SZ_512K, SZ_128K, DEVFS_PARTITION_FIXED, "env_raw1");
 	dev_add_bb_dev("env_raw1", "env1");
 
-	armlinux_set_bootparams((void *)(AT91_CHIPSELECT_1 + 0x100));
 	if (machine_is_at91sam9g10ek())
 		armlinux_set_architecture(MACH_TYPE_AT91SAM9G10EK);
 	else
@@ -401,8 +401,23 @@ device_initcall(at91sam9261ek_devices_init);
 
 static int at91sam9261ek_console_init(void)
 {
+	if (machine_is_at91sam9g10ek()) {
+		barebox_set_model("Atmel at91sam9g10-ek");
+		barebox_set_hostname("at91sam9g10-ek");
+	} else {
+		barebox_set_model("Atmel at91sam9261-ek");
+		barebox_set_hostname("at91sam9261-ek");
+	}
+
 	at91_register_uart(0, 0);
 	return 0;
 }
 
 console_initcall(at91sam9261ek_console_init);
+
+static int at91sam9261ek_main_clock(void)
+{
+	at91_set_main_clock(18432000);
+	return 0;
+}
+pure_initcall(at91sam9261ek_main_clock);

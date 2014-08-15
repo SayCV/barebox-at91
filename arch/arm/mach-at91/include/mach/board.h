@@ -30,6 +30,8 @@
 #include <linux/phy.h>
 #include <platform_data/macb.h>
 
+void at91_set_main_clock(unsigned long rate);
+
  /* USB Host */
 struct at91_usbh_data {
 	u8		ports;		/* number of ports on root hub */
@@ -148,6 +150,7 @@ struct atmel_mci_platform_data {
 	unsigned bus_width;
 	int detect_pin;
 	int wp_pin;
+	char *devname;
 };
 
 void at91_add_device_mci(short mmc_id, struct atmel_mci_platform_data *data);

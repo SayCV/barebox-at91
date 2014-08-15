@@ -26,6 +26,7 @@
 #include <dm9000.h>
 #include <mach/devices-s3c64xx.h>
 #include <mach/s3c-generic.h>
+#include <mach/iomux.h>
 
 #include "tiny6410.h"
 
@@ -91,6 +92,9 @@ static int tiny6410evk_console_init(void)
 	/* note: UART0 has no RTS/CTS connected */
 	s3c_gpio_mode(GPA0_RXD0 | ENABLE_PU);
 	s3c_gpio_mode(GPA1_TXD0);
+
+	barebox_set_model("Friendlyarm tiny6410");
+	barebox_set_hostname("tiny6410");
 
 	s3c64xx_add_uart1();
 

@@ -16,10 +16,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
  */
 
 #include <common.h>
@@ -269,9 +265,9 @@ int atmel_lcdc_register(struct device_d *dev, struct atmel_lcdfb_devdata *data)
 	info = &sinfo->info;
 	info->priv = sinfo;
 	info->fbops = &atmel_lcdc_ops;
-	info->mode_list = pdata->mode_list;
-	info->num_modes = pdata->num_modes;
-	info->mode = &info->mode_list[0];
+	info->modes.modes = pdata->mode_list;
+	info->modes.num_modes = pdata->num_modes;
+	info->mode = &info->modes.modes[0];
 	info->xres = info->mode->xres;
 	info->yres = info->mode->yres;
 	info->bits_per_pixel = pdata->default_bpp;

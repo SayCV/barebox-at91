@@ -15,10 +15,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
  */
 
 #include <common.h>
@@ -35,9 +31,10 @@
 #include <mach/imx-regs.h>
 #include <mach/clock.h>
 #include <mach/mci.h>
+#include <mach/iomux.h>
 
 static struct mxs_mci_platform_data mci_pdata = {
-	.caps = MMC_MODE_4BIT | MMC_MODE_HS | MMC_MODE_HS_52MHz,
+	.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED | MMC_CAP_MMC_HIGHSPEED,
 	.voltages = MMC_VDD_32_33 | MMC_VDD_33_34,	/* fixed to 3.3 V */
 	.f_min = 400000,
 };
@@ -114,31 +111,20 @@ static void olinuxino_init_usb(void)
 
 static int imx23_olinuxino_devices_init(void)
 {
-	int i, rc;
-
+	int i;
 
 	/* initizalize gpios */
 	for (i = 0; i < ARRAY_SIZE(pad_setup); i++)
 		imx_gpio_mode(pad_setup[i]);
 
-	armlinux_set_bootparams((void *)IMX_MEMORY_BASE + 0x100);
 	armlinux_set_architecture(MACH_TYPE_IMX233_OLINUXINO);
-
-	/* enable IOCLK to run at the PLL frequency */
-	imx_set_ioclk(480000000);
-
-	/* run the SSP unit clock at 100,000 kHz */
-	imx_set_sspclk(0, 100000000, 1);
 
 	add_generic_device("mxs_mci", DEVICE_ID_DYNAMIC, NULL, IMX_SSP1_BASE,
 					0x8000, IORESOURCE_MEM, &mci_pdata);
 
 	olinuxino_init_usb();
 
-	rc = envfs_register_partition("disk0", 1);
-	if (rc != 0)
-		printf("Cannot create the 'env0' persistent "
-			 "environment storage (%d)\n", rc);
+	default_environment_path_set("/dev/disk0.1");
 
 	return 0;
 }
@@ -147,6 +133,9 @@ device_initcall(imx23_olinuxino_devices_init);
 
 static int imx23_olinuxino_console_init(void)
 {
+	barebox_set_model("Olimex.ltd imx233-olinuxino");
+	barebox_set_hostname("imx233-olinuxino");
+
 	add_generic_device("stm_serial", 0, NULL, IMX_DBGUART_BASE, 8192,
 			   IORESOURCE_MEM, NULL);
 
@@ -154,62 +143,3 @@ static int imx23_olinuxino_console_init(void)
 }
 
 console_initcall(imx23_olinuxino_console_init);
-
-/** @page olinuxino Olimex.ltd's i.MX23 evaluation kit
-
-This CPU card is based on an i.MX23 CPU. The card is shipped with:
-
-- 64 MiB synchronous dynamic RAM (mobile DDR type)
-
-
-Memory layout when @b barebox is running:
-
-- 0x40000000 start of SDRAM
-- 0x40000100 start of kernel's boot parameters
-  - below malloc area: stack area
-  - below barebox: malloc area
-- 0x42000000 start of @b barebox
-
-@section get_imx23_olinuxino_binary How to get the bootloader binary image:
-
-Using the default configuration:
-
-@verbatim
-make ARCH=arm imx23_olinuxino_defconfig
-@endverbatim
-
-Build the bootloader binary image:
-
-@verbatim
-make ARCH=arm CROSS_COMPILE=armv5compiler
-@endverbatim
-
-@note replace the armv5compiler with your ARM v5 cross compiler.
-
-@section imx233-olinuxino How to prepare an MCI card to boot
-the imx233-olinuxino with barebox
-
-- Create four primary partitions on the MCI card
- - the first one for the bootlets (about 256 kiB)
- - the second one for the persistant environment
-   (size is up to you, at least 256k)
- - the third one for the kernel (2 MiB ... 4 MiB in size)
- - the 4th one for the root filesystem which can fill the
-   rest of the available space
-
-- Mark the first partition with the partition ID "53" and copy the bootlets
-  into this partition (currently not part of @b barebox!).
-
-- @b barebox expect device tree blob file imx23-olinuxino.dtb
-  into directory env/oftree. At compile time, copy blob file into directory
-  arch/arm/boards/imx233-olinuxino/env/oftree/.
-
-- Copy the default @b barebox environment into the second partition
-  (no filesystem required).
-
-- Copy the kernel into the third partition (no filesystem required).
-
-- Create the root filesystem in the 4th partition. You may copy an
-  image into this partition or you can do it in the classic way:
-  mkfs on it, mount it and copy all required data and programs into it.
-*/

@@ -15,17 +15,13 @@
  *
  */
 
-/**
- * @file
- * @brief A tiny editor implementation
- */
-
 #include <common.h>
 #include <command.h>
 #include <malloc.h>
 #include <fs.h>
 #include <linux/ctype.h>
 #include <fcntl.h>
+#include <libfile.h>
 #include <readkey.h>
 #include <errno.h>
 #include <xfuncs.h>
@@ -266,7 +262,7 @@ static int save_file(const char *path)
 	fd = open(path, O_WRONLY | O_TRUNC | O_CREAT);
 	if (fd < 0) {
 		printf("could not open file for writing: %s\n", errno_str());
-		return -1;
+		return fd;
 	}
 
 	line = buffer;
@@ -384,7 +380,16 @@ static int do_edit(int argc, char *argv[])
 		return COMMAND_ERROR_USAGE;
 
 	screenwidth = 80;
-	screenheight = 25;
+
+	/*
+	 * The EFI simple text output protocol wraps to the next line and scrolls
+	 * down when we write to the right bottom screen position. Reduce the number
+	 * of rows by one to work around this.
+	 */
+	if (IS_ENABLED(CONFIG_ARCH_EFI))
+		screenheight = 24;
+	else
+		screenheight = 25;
 
 	/* check if we are called as "sedit" instead of "edit" */
 	if (*argv[0] == 's') {
@@ -456,7 +461,7 @@ static int do_edit(int argc, char *argv[])
 
 		c = read_key();
 		switch (c) {
-		case KEY_UP:
+		case BB_KEY_UP:
 			if (!curline->prev)
 				continue;
 
@@ -464,7 +469,7 @@ static int do_edit(int argc, char *argv[])
 			cursy--;
 			textx = setpos(curline->data, linepos);
 			break;
-		case KEY_DOWN:
+		case BB_KEY_DOWN:
 			if (!curline->next)
 				continue;
 
@@ -472,19 +477,19 @@ static int do_edit(int argc, char *argv[])
 			cursy++;
 			textx = setpos(curline->data, linepos);
 			break;
-		case KEY_RIGHT:
+		case BB_KEY_RIGHT:
 			textx++;
 			break;
-		case KEY_LEFT:
+		case BB_KEY_LEFT:
 			textx--;
 			break;
-		case KEY_HOME:
+		case BB_KEY_HOME:
 			textx = 0;
 			break;
-		case KEY_END:
+		case BB_KEY_END:
 			textx = curlen;
 			break;
-		case KEY_PAGEUP:
+		case BB_KEY_PAGEUP:
 			for (i = 0; i < screenheight - 1; i++) {
 				if (!curline->prev)
 					break;
@@ -493,7 +498,7 @@ static int do_edit(int argc, char *argv[])
 			}
 			textx = setpos(curline->data, linepos);
 			break;
-		case KEY_PAGEDOWN:
+		case BB_KEY_PAGEDOWN:
 			for (i = 0; i < screenheight - 1; i++) {
 				if (!curline->next)
 					break;
@@ -502,7 +507,7 @@ static int do_edit(int argc, char *argv[])
 			}
 			textx = setpos(curline->data, linepos);
 			break;
-		case KEY_DEL:
+		case BB_KEY_DEL:
 			if (textx == curlen) {
 				if (curline->next)
 					merge_line(curline);
@@ -547,24 +552,14 @@ out:
 static const char *edit_aliases[] = { "sedit", NULL};
 
 BAREBOX_CMD_HELP_START(edit)
-BAREBOX_CMD_HELP_USAGE("(s)edit <file>\n")
-BAREBOX_CMD_HELP_SHORT("A small editor. <ctrl-c> is exit, <ctrl-d> exit-with-save.\n")
+BAREBOX_CMD_HELP_TEXT("Use cursor keys, Ctrl-C to exit and Ctrl-D to exit-with-save.")
 BAREBOX_CMD_HELP_END
-
-/**
- * @page edit_command
-
-<p> Barebox contains a small text editor which can be used to edit
-config files in /env. You can move the cursor around with the arrow keys
-and type characters. </p>
-
-If called as sedit, the editor uses ansi codes to scroll the screen.
- */
 
 BAREBOX_CMD_START(edit)
 	.cmd		= do_edit,
 	.aliases	= edit_aliases,
-	.usage		= "Usage: (s)edit <file>",
+	BAREBOX_CMD_DESC("a small full-screen editor")
+	BAREBOX_CMD_OPTS("FILE")
+	BAREBOX_CMD_GROUP(CMD_GRP_CONSOLE)
 	BAREBOX_CMD_HELP(cmd_edit_help)
 BAREBOX_CMD_END
-

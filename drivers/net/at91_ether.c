@@ -224,7 +224,7 @@ static int at91_ether_rx(struct eth_device *edev)
 
 	size = rbfp->size & RBF_SIZE;
 
-	net_receive((unsigned char *)(rbfp->addr & RBF_ADDR), size);
+	net_receive(edev, (unsigned char *)(rbfp->addr & RBF_ADDR), size);
 
 	rbfp->addr &= ~RBF_OWNER;
 	if (rbfp->addr & RBF_WRAP)
@@ -357,13 +357,8 @@ static int at91_ether_probe(struct device_d *dev)
 	return 0;
 }
 
-static void at91_ether_remove(struct device_d *dev)
-{
-}
-
 static struct driver_d at91_ether_driver = {
 	.name = "at91_ether",
 	.probe = at91_ether_probe,
-	.remove = at91_ether_remove,
 };
 device_platform_driver(at91_ether_driver);

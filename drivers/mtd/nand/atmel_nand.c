@@ -107,7 +107,7 @@ static struct nand_ecclayout atmel_pmecc_oobinfo;
  */
 static void atmel_nand_enable(struct atmel_nand_host *host)
 {
-	if (host->board->enable_pin)
+	if (gpio_is_valid(host->board->enable_pin))
 		gpio_set_value(host->board->enable_pin, 0);
 }
 
@@ -116,7 +116,7 @@ static void atmel_nand_enable(struct atmel_nand_host *host)
  */
 static void atmel_nand_disable(struct atmel_nand_host *host)
 {
-	if (host->board->enable_pin)
+	if (gpio_is_valid(host->board->enable_pin))
 		gpio_set_value(host->board->enable_pin, 1);
 }
 
@@ -624,7 +624,7 @@ normal_check:
 }
 
 static int atmel_nand_pmecc_read_page(struct mtd_info *mtd,
-		struct nand_chip *chip, uint8_t *buf)
+		struct nand_chip *chip, uint8_t *buf, int oob_required, int page)
 {
 	struct atmel_nand_host *host = chip->priv;
 	int eccsize = chip->ecc.size;
@@ -659,8 +659,9 @@ static int atmel_nand_pmecc_read_page(struct mtd_info *mtd,
 	return 0;
 }
 
-static void atmel_nand_pmecc_write_page(struct mtd_info *mtd,
-		struct nand_chip *chip, const uint8_t *buf)
+static int atmel_nand_pmecc_write_page(struct mtd_info *mtd,
+		struct nand_chip *chip, const uint8_t *buf,
+		int oob_required)
 {
 	struct atmel_nand_host *host = chip->priv;
 	uint32_t *eccpos = chip->ecc.layout->eccpos;
@@ -681,7 +682,7 @@ static void atmel_nand_pmecc_write_page(struct mtd_info *mtd,
 		!(pmecc_readl_relaxed(host->ecc, SR) & PMECC_SR_BUSY));
 	if (ret) {
 		dev_err(host->dev, "PMECC: Timeout to get ECC value.\n");
-		return;
+		return -ETIMEDOUT;
 	}
 
 	for (i = 0; i < host->pmecc_sector_number; i++) {
@@ -694,6 +695,8 @@ static void atmel_nand_pmecc_write_page(struct mtd_info *mtd,
 		}
 	}
 	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
+
+	return 0;
 }
 
 static void atmel_pmecc_core_init(struct mtd_info *mtd)
@@ -793,7 +796,9 @@ static int __init atmel_pmecc_nand_init_params(struct device_d *dev,
 	switch (mtd->writesize) {
 	case 2048:
 	case 4096:
-		host->pmecc_degree = PMECC_GF_DIMENSION_13;
+	case 8192:
+		host->pmecc_degree = (sector_size == 512) ?
+					PMECC_GF_DIMENSION_13 : PMECC_GF_DIMENSION_14;
 		host->pmecc_cw_len = (1 << host->pmecc_degree) - 1;
 		host->pmecc_sector_number = mtd->writesize / sector_size;
 		host->pmecc_bytes_per_sector = pmecc_get_ecc_bytes(
@@ -834,6 +839,7 @@ static int __init atmel_pmecc_nand_init_params(struct device_d *dev,
 		return err_no;
 	}
 
+	nand_chip->options |= NAND_NO_SUBPAGE_WRITE;
 	nand_chip->ecc.read_page = atmel_nand_pmecc_read_page;
 	nand_chip->ecc.write_page = atmel_nand_pmecc_write_page;
 
@@ -881,7 +887,7 @@ static int atmel_nand_calculate(struct mtd_info *mtd,
  * buf:        buffer to store read data
  */
 static int atmel_nand_read_page(struct mtd_info *mtd,
-		struct nand_chip *chip, uint8_t *buf)
+		struct nand_chip *chip, uint8_t *buf, int oob_required, int page)
 {
 	int eccsize = chip->ecc.size;
 	int eccbytes = chip->ecc.bytes;
@@ -1158,7 +1164,12 @@ static int __init atmel_nand_probe(struct device_d *dev)
 		nand_chip->ecc.mode = NAND_ECC_HW;
 	}
 
-	nand_chip->chip_delay = 20;		/* 20us command delay time */
+	nand_chip->chip_delay = 40;		/* 40us command delay time */
+
+	if (IS_ENABLED(CONFIG_NAND_ECC_BCH) &&
+			pdata->ecc_mode == NAND_ECC_SOFT_BCH) {
+		nand_chip->ecc.mode = NAND_ECC_SOFT_BCH;
+	}
 
 	if (host->board->bus_width_16) {	/* 16-bit bus width */
 		nand_chip->options |= NAND_BUSWIDTH_16;
@@ -1201,7 +1212,7 @@ static int __init atmel_nand_probe(struct device_d *dev)
 
 
 	/* first scan to find the device and get the page size */
-	if (nand_scan_ident(mtd, 1)) {
+	if (nand_scan_ident(mtd, 1, NULL)) {
 		res = -ENXIO;
 		goto err_scan_ident;
 	}

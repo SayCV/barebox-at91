@@ -15,9 +15,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <common.h>
@@ -33,5 +30,6 @@ static int cmd_poweroff(int argc, char *argv[])
 
 BAREBOX_CMD_START(poweroff)
 	.cmd		= cmd_poweroff,
-	.usage		= "Perform POWER OFF of the board",
+	BAREBOX_CMD_DESC("turn the power off")
+	BAREBOX_CMD_GROUP(CMD_GRP_HWMANIP)
 BAREBOX_CMD_END

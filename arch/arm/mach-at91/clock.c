@@ -65,7 +65,7 @@
 #define cpu_has_pllb()		(!(cpu_is_at91sam9rl() \
 				|| cpu_is_at91sam9g45() \
 				|| cpu_is_at91sam9x5() \
-				|| cpu_is_at91sam9n12()))
+				|| cpu_is_sama5d3()))
 
 #define cpu_has_upll()		(cpu_is_at91sam9g45() \
 				|| cpu_is_at91sam9x5() \
@@ -616,13 +616,20 @@ static void at91_upll_usbfs_clock_init(unsigned long main_clock)
 
 static int pll_overclock = 0;
 static u32 cpu_freq = 0;
+static unsigned long at91_main_clock = 0;
 
-int at91_clock_init(unsigned long main_clock)
+void at91_set_main_clock(unsigned long rate)
+{
+	at91_main_clock = rate;
+}
+
+int at91_clock_init(void)
 {
 	unsigned tmp, freq, mckr;
 	int i;
+	unsigned long main_clock;
 
-
+	main_clock = at91_main_clock;
 
 	/*
 	 * When the bootloader initialized the main oscillator correctly,
@@ -874,15 +881,10 @@ static int do_at91clk(int argc, char *argv[])
 	return 0;
 }
 
-BAREBOX_CMD_HELP_START(at91clk)
-BAREBOX_CMD_HELP_USAGE("at91clk\n")
-BAREBOX_CMD_HELP_SHORT("dump current clock configuration\n");
-BAREBOX_CMD_HELP_END
-
 BAREBOX_CMD_START(at91clk)
 	.cmd		= do_at91clk,
-	.usage		= "dump current clock configuration",
-	BAREBOX_CMD_HELP(cmd_at91clk_help)
+	BAREBOX_CMD_DESC("list clock configuration")
+	BAREBOX_CMD_GROUP(CMD_GRP_INFO)
 	BAREBOX_CMD_COMPLETE(empty_complete)
 BAREBOX_CMD_END
 #endif

@@ -15,102 +15,60 @@
  *
  */
 
-/**
- * @file
- * @brief saveenv: Make the environment persistent
- */
-
 #include <common.h>
 #include <command.h>
 #include <errno.h>
+#include <getopt.h>
 #include <fs.h>
 #include <fcntl.h>
 #include <envfs.h>
 
 static int do_saveenv(int argc, char *argv[])
 {
-	int ret, fd;
+	int ret, opt;
+	unsigned envfs_flags = 0;
 	char *filename, *dirname;
 
 	printf("saving environment\n");
-	if (argc < 3)
+	while ((opt = getopt(argc, argv, "z")) > 0) {
+		switch (opt) {
+		case 'z':
+			envfs_flags |= ENVFS_FLAGS_FORCE_BUILT_IN;
+			break;
+		}
+	}
+
+	/* destination and source are given? */
+	if (argc == optind + 2)
+		dirname = argv[optind + 1];
+	else
 		dirname = "/env";
+
+	/* destination only given? */
+	if (argc == optind + 1)
+		filename = argv[optind];
 	else
-		dirname = argv[2];
-	if (argc < 2)
-		filename = default_environment_path;
-	else
-		filename = argv[1];
+		filename = default_environment_path_get();
 
-	fd = open(filename, O_WRONLY | O_CREAT);
-	if (fd < 0) {
-		printf("could not open %s: %s\n", filename, errno_str());
-		return 1;
-	}
+	ret = envfs_save(filename, dirname, envfs_flags);
 
-	ret = protect(fd, ~0, 0, 0);
-
-	/* ENOSYS is no error here, many devices do not need it */
-	if (ret && errno != ENOSYS) {
-		printf("could not unprotect %s: %s\n", filename, errno_str());
-		close(fd);
-		return 1;
-	}
-
-	ret = erase(fd, ~0, 0);
-
-	/* ENOSYS is no error here, many devices do not need it */
-	if (ret && errno != ENOSYS) {
-		printf("could not erase %s: %s\n", filename, errno_str());
-		close(fd);
-		return 1;
-	}
-
-	close(fd);
-
-	ret = envfs_save(filename, dirname);
-	if (ret) {
-		printf("saveenv failed\n");
-		goto out;
-	}
-
-	fd = open(filename, O_WRONLY | O_CREAT);
-
-	ret = protect(fd, ~0, 0, 1);
-
-	/* ENOSYS is no error here, many devices do not need it */
-	if (ret && errno != ENOSYS) {
-		printf("could not protect %s: %s\n", filename, errno_str());
-		close(fd);
-		return 1;
-	}
-
-	ret = 0;
-out:
-	close(fd);
 	return ret;
 }
 
 BAREBOX_CMD_HELP_START(saveenv)
-BAREBOX_CMD_HELP_USAGE("saveenv [envfs] [directory]\n")
-BAREBOX_CMD_HELP_SHORT("Save the files in <directory> to the persistent storage device <envfs>.\n")
+BAREBOX_CMD_HELP_TEXT("Save the files in DIRECTORY to the persistent storage device ENVFS.")
+BAREBOX_CMD_HELP_TEXT("")
+BAREBOX_CMD_HELP_TEXT("ENVFS is usually a block in flash but can be any other file. If")
+BAREBOX_CMD_HELP_TEXT("omitted, DIRECTORY defaults to /env and ENVFS defaults to")
+BAREBOX_CMD_HELP_TEXT("/dev/env0.")
+BAREBOX_CMD_HELP_OPT ("-z",  "force the built-in default environment at startup")
+
 BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(saveenv)
 	.cmd		= do_saveenv,
-	.usage		= "save environment to persistent storage",
+	BAREBOX_CMD_DESC("save environment to persistent storage")
+	BAREBOX_CMD_OPTS("[-z] [ENVFS [DIRECTORY]]")
+	BAREBOX_CMD_GROUP(CMD_GRP_ENV)
 	BAREBOX_CMD_HELP(cmd_saveenv_help)
 BAREBOX_CMD_END
-
-/**
- * @page saveenv_command
-
-<p>\<envfs> is usually a block in flash but can be any other file. If
-omitted, \<directory> defaults to /env and \<envfs> defaults to
-/dev/env0. Note that envfs can only handle files, directories are being
-skipped silently.</p>
-
-\todo What does 'block in flash' mean? Add example.
-
- */
-

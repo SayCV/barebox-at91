@@ -5,13 +5,11 @@ config BLACKFIN
 	select HAS_MODULES
 	select HAVE_CONFIGURABLE_MEMORY_LAYOUT
 	select HAVE_CONFIGURABLE_TEXT_BASE
+	select GENERIC_FIND_NEXT_BIT
 	default y
 
 config BF561
 	bool
-
-config BOARDINFO
-	default "PII IPE337" if MACH_IPE337
 
 config ARCH_TEXT_BASE
 	hex

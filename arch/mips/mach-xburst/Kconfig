@@ -6,6 +6,8 @@ config ARCH_TEXT_BASE
 
 config CPU_JZ4755
 	bool
+	select WATCHDOG
+	select WATCHDOG_JZ4740
 
 choice
 	prompt "Board type"
@@ -34,7 +36,5 @@ config JZ4750D_DEBUG_LL_UART2
 endchoice
 endif # CPU_JZ4755
 endif # DEBUG_LL
-
-source arch/mips/boards/rzx50/Kconfig
 
 endif

@@ -21,6 +21,7 @@
 #include <mach/s3c-iomap.h>
 #include <mach/devices-s3c64xx.h>
 #include <mach/s3c-generic.h>
+#include <mach/iomux.h>
 
 /*
  * dm9000 network controller onboard
@@ -282,7 +283,6 @@ static int mini6410_devices_init(void)
 	add_dm9000_device(0, S3C_CS1_BASE + 0x300, S3C_CS1_BASE + 0x304,
 				IORESOURCE_MEM_16BIT, &dm9000_data);
 
-	armlinux_set_bootparams((void *)S3C_SDRAM_BASE + 0x100);
 	armlinux_set_architecture(MACH_TYPE_MINI6410);
 
 	return 0;
@@ -296,6 +296,9 @@ static int mini6410_console_init(void)
 	s3c_gpio_mode(GPA1_TXD0);
 	s3c_gpio_mode(GPA2_NCTS0 | ENABLE_PU);
 	s3c_gpio_mode(GPA3_NRTS0);
+
+	barebox_set_model("Friendlyarm mini6410");
+	barebox_set_hostname("mini6410");
 
 	s3c64xx_add_uart1();
 

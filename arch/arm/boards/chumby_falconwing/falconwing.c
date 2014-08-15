@@ -30,9 +30,10 @@
 #include <mach/mci.h>
 #include <mach/fb.h>
 #include <mach/usb.h>
+#include <mach/iomux.h>
 
 static struct mxs_mci_platform_data mci_pdata = {
-	.caps = MMC_MODE_4BIT | MMC_MODE_HS | MMC_MODE_HS_52MHz,
+	.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED | MMC_CAP_MMC_HIGHSPEED,
 	.voltages = MMC_VDD_32_33 | MMC_VDD_33_34,	/* fixed to 3.3 V */
 };
 
@@ -74,7 +75,6 @@ static struct fb_videomode falconwing_vmode = {
 	.lower_margin = 8,
 	.sync = FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
 	.vmode = FB_VMODE_NONINTERLACED,
-	.flag = 0,
 };
 
 #define MAX_FB_SIZE SZ_1M
@@ -284,15 +284,12 @@ static void falconwing_init_usb(void)
 
 static int falconwing_devices_init(void)
 {
-	int i, rc;
+	int i;
 
 	/* initizalize gpios */
 	for (i = 0; i < ARRAY_SIZE(pad_setup); i++)
 		imx_gpio_mode(pad_setup[i]);
 
-	imx_set_ioclk(480000000); /* enable IOCLK to run at the PLL frequency */
-	/* run the SSP unit clock at 100,000 kHz */
-	imx_set_sspclk(0, 100000000, 1);
 	add_generic_device("mxs_mci", 0, NULL, IMX_SSP1_BASE, 0x2000,
 			   IORESOURCE_MEM, &mci_pdata);
 	add_generic_device("stmfb", 0, NULL, IMX_FB_BASE, 4096,
@@ -300,12 +297,9 @@ static int falconwing_devices_init(void)
 
 	falconwing_init_usb();
 
-	armlinux_set_bootparams((void *)IMX_MEMORY_BASE + 0x100);
 	armlinux_set_architecture(MACH_TYPE_CHUMBY);
 
-	rc = envfs_register_partition("disk0", 1);
-	if (rc != 0)
-		printf("Cannot create the 'env0' persistent environment storage (%d)\n", rc);
+	default_environment_path_set("/dev/disk0.1");
 
 	return 0;
 }
@@ -314,6 +308,9 @@ device_initcall(falconwing_devices_init);
 
 static int falconwing_console_init(void)
 {
+	barebox_set_model("Chumby Falconwing");
+	barebox_set_hostname("falconwing");
+
 	add_generic_device("stm_serial", 0, NULL, IMX_DBGUART_BASE, 8192,
 			   IORESOURCE_MEM, NULL);
 
@@ -321,141 +318,3 @@ static int falconwing_console_init(void)
 }
 
 console_initcall(falconwing_console_init);
-
-/** @page chumbyone Chumby Industrie's Falconwing
-
-This device is also known as "chumby one" (http://www.chumby.com/)
-
-This CPU card is based on a Freescale i.MX23 CPU. The card is shipped with:
-
-- 64 MiB synchronous dynamic RAM (DDR type)
-
-Memory layout when @b barebox is running:
-
-- 0x40000000 start of SDRAM
-- 0x40000100 start of kernel's boot parameters
-  - below malloc area: stack area
-  - below barebox: malloc area
-- 0x42000000 start of @b barebox
-
-@section get_falconwing_binary How to get the bootloader binary image:
-
-Using the default configuration:
-
-@verbatim
-make ARCH=arm chumbyone_defconfig
-@endverbatim
-
-Build the bootloader binary image:
-
-@verbatim
-make ARCH=arm CROSS_COMPILE=armv5compiler
-@endverbatim
-
-@note replace the armv5compiler with your ARM v5 cross compiler.
-
-@section setup_falconwing How to prepare an MCI card to boot the "chumby one" with barebox
-
-- Create four primary partitions on the MCI card
- - the first one for the bootlets (about 256 kiB)
- - the second one for the persistant environment (size is up to you, at least 256k)
- - the third one for the kernel (2 MiB ... 4 MiB in size)
- - the 4th one for the root filesystem which can fill the rest of the available space
-
-- Mark the first partition with the partition ID "53" and copy the bootlets
-  into this partition (currently not part of @b barebox!).
-
-- Copy the default @b barebox environment into the second partition (no filesystem required).
-
-- Copy the kernel into the third partition (no filesystem required).
-
-- Create the root filesystem in the 4th partition. You may copy an image into this
-  partition or you can do it in the classic way: mkfs on it, mount it and copy
-  all required data and programs into it.
-
-@section gpio_falconwing Available GPIOs
-
-The Falconwing uses some GPIOs to control various features. With the regular
-GPIO commands these features can be controlled at @a barebox's runtime.
-
-<table width="100%" border="1" cellspacing="1" cellpadding="3">
-	<tr>
-		<td>No</td>
-		<td>Direction</td>
-		<td>Function</td>
-		<td>Reset</td>
-		<td>Set</td>
-	</tr>
-	<tr>
-		<td>8</td>
-		<td>Output</td>
-		<td>Switch Audio Amplifier</td>
-		<td>Off</td>
-		<td>On</td>
-	</tr>
-	<tr>
-		<td>11</td>
-		<td>Input</td>
-		<td>Head Phone Detection</td>
-		<td>TBD</td>
-		<td>TBD</td>
-	</tr>
-	<tr>
-		<td>14</td>
-		<td>Input</td>
-		<td>Unused (J113)</td>
-		<td>User</td>
-		<td>User</td>
-	</tr>
-	<tr>
-		<td>15</td>
-		<td>Input</td>
-		<td>Unused (J114)</td>
-		<td>User</td>
-		<td>User</td>
-	</tr>
-	<tr>
-		<td>26</td>
-		<td>Output</td>
-		<td>USB Power</td>
-		<td>TBD</td>
-		<td>TBD</td>
-	</tr>
-	<tr>
-		<td>27</td>
-		<td>Input</td>
-		<td>Display Connected</td>
-		<td>Display<br>Attached</td>
-		<td>Display<br>Disconnected</td>
-	</tr>
-	<tr>
-		<td>29</td>
-		<td>Output</td>
-		<td>USB HUB Reset</td>
-		<td>TBD</td>
-		<td>TBD</td>
-	</tr>
-	<tr>
-		<td>50</td>
-		<td>Output</td>
-		<td>Display Reset</td>
-		<td>Display<br>Reset</td>
-		<td>Display<br>Running</td>
-	</tr>
-	<tr>
-		<td>60</td>
-		<td>Output</td>
-		<td>Display Backlight</td>
-		<td>Backlight<br>Off</td>
-		<td>Backlight<br>On (100 %)</td>
-	</tr>
-	<tr>
-		<td>62</td>
-		<td>Input</td>
-		<td>Bend</td>
-		<td>Not pressed</td>
-		<td>Pressed</td>
-	</tr>
-</table>
-
-*/

@@ -20,17 +20,25 @@
 #include <linux/ethtool.h>
 #include <linux/mii.h>
 
-#define PHY_BASIC_FEATURES	(SUPPORTED_10baseT_Half | \
-				 SUPPORTED_10baseT_Full | \
-				 SUPPORTED_100baseT_Half | \
-				 SUPPORTED_100baseT_Full | \
-				 SUPPORTED_Autoneg | \
+#define PHY_DEFAULT_FEATURES    (SUPPORTED_Autoneg | \
 				 SUPPORTED_TP | \
 				 SUPPORTED_MII)
 
-#define PHY_GBIT_FEATURES	(PHY_BASIC_FEATURES | \
-				 SUPPORTED_1000baseT_Half | \
+#define PHY_10BT_FEATURES       (SUPPORTED_10baseT_Half | \
+				 SUPPORTED_10baseT_Full)
+
+#define PHY_100BT_FEATURES      (SUPPORTED_100baseT_Half | \
+				 SUPPORTED_100baseT_Full)
+
+#define PHY_1000BT_FEATURES     (SUPPORTED_1000baseT_Half | \
 				 SUPPORTED_1000baseT_Full)
+
+#define PHY_BASIC_FEATURES      (PHY_10BT_FEATURES | \
+				 PHY_100BT_FEATURES | \
+				 PHY_DEFAULT_FEATURES)
+
+#define PHY_GBIT_FEATURES       (PHY_BASIC_FEATURES | \
+				 PHY_1000BT_FEATURES)
 
 /* Interface Mode definitions */
 typedef enum {
@@ -46,6 +54,7 @@ typedef enum {
 	PHY_INTERFACE_MODE_RGMII_TXID,
 	PHY_INTERFACE_MODE_RTBI,
 	PHY_INTERFACE_MODE_SMII,
+	PHY_INTERFACE_MODE_QSGMII,
 } phy_interface_t;
 
 #define PHY_INIT_TIMEOUT	100000
@@ -85,12 +94,21 @@ struct mii_bus {
 
 	/* PHY addresses to be ignored when probing */
 	u32 phy_mask;
+
+	struct list_head list;
 };
 #define to_mii_bus(d) container_of(d, struct mii_bus, dev)
 
 int mdiobus_register(struct mii_bus *bus);
 void mdiobus_unregister(struct mii_bus *bus);
 struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr);
+
+extern struct list_head mii_bus_list;
+
+int mdiobus_detect(struct device_d *dev);
+
+#define for_each_mii_bus(mii) \
+	list_for_each_entry(mii, &mii_bus_list, list)
 
 /**
  * mdiobus_read - Convenience function for reading a given MII mgmt register
@@ -161,6 +179,7 @@ struct phy_device {
 	int autoneg;
 	int force;
 
+	int registered;
 
 	/* private data pointer */
 	/* For use by PHYs to maintain extra state */
@@ -243,6 +262,8 @@ struct phy_device *get_phy_device(struct mii_bus *bus, int addr);
 int phy_init(void);
 int phy_init_hw(struct phy_device *phydev);
 
+int phy_register_device(struct phy_device* dev);
+
 /**
  * phy_read - Convenience function for reading a given PHY register
  * @phydev: the phy_device struct
@@ -284,9 +305,22 @@ int phy_register_fixup(const char *bus_id, u32 phy_uid, u32 phy_uid_mask,
 		int (*run)(struct phy_device *));
 int phy_register_fixup_for_id(const char *bus_id,
 		int (*run)(struct phy_device *));
+int phy_scan_fixups(struct phy_device *phydev);
+
+int phy_read_mmd_indirect(struct phy_device *phydev, int prtad, int devad);
+void phy_write_mmd_indirect(struct phy_device *phydev, int prtad, int devad,
+				   u16 data);
+
+#ifdef CONFIG_PHYLIB
 int phy_register_fixup_for_uid(u32 phy_uid, u32 phy_uid_mask,
 		int (*run)(struct phy_device *));
-int phy_scan_fixups(struct phy_device *phydev);
+#else
+static inline int phy_register_fixup_for_uid(u32 phy_uid, u32 phy_uid_mask,
+		int (*run)(struct phy_device *))
+{
+	return -ENOSYS;
+}
+#endif
 
 extern struct bus_type mdio_bus_type;
 #endif /* __PHYDEV_H__ */

@@ -86,7 +86,7 @@ static int netx_eth_send (struct eth_device *edev,
 #endif
 	val = PFIFO_REG( PFIFO_BASE(CON_FIFO_PORT_LO(xcno)) );
 	if((val & FIFO_PTR_ERROR_MASK) & 0x8)
-		printf("error sending frame: %d\n",val);
+		printf("error sending frame: %u\n", val);
 
 	return 0;
 }
@@ -110,7 +110,7 @@ static int netx_eth_rx (struct eth_device *edev)
 	/* get data */
 	memcpy((void*)NetRxPackets[0], (void *)(SRAM_BASE(seg) + frameno * 1560), len);
 	/* pass to barebox */
-	net_receive(NetRxPackets[0], len);
+	net_receive(edev, NetRxPackets[0], len);
 
 	PFIFO_REG(PFIFO_BASE(EMPTY_PTR_FIFO(xcno))) =
 		FIFO_PTR_SEGMENT(seg) |

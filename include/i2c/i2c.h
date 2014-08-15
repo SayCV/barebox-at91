@@ -19,8 +19,6 @@
 #include <driver.h>
 #include <linux/types.h>
 
-#ifndef DOXYGEN_SHOULD_SKIP_THIS
-
 /*
  * struct i2c_platform_data - structure of platform data for MXC I2C driver
  * @param	bitrate	Bus speed measured in Hz
@@ -36,6 +34,7 @@ struct i2c_platform_data {
 #define I2C_M_DATA_ONLY		0x0002	/* transfer data bytes only */
 #define I2C_M_TEN               0x0010  /* this is a ten bit chip address */
 #define I2C_M_IGNORE_NAK        0x1000  /* if I2C_FUNC_PROTOCOL_MANGLING */
+#define I2C_M_STOP		0x8000	/* if I2C_FUNC_PROTOCOL_MANGLING */
 
 /**
  * struct i2c_msg - an I2C transaction segment beginning with START
@@ -86,6 +85,63 @@ struct i2c_client {
 
 #define to_i2c_client(a)	container_of(a, struct i2c_client, dev)
 
+/*flags for the client struct: */
+#define I2C_CLIENT_PEC	0x04		/* Use Packet Error Checking */
+#define I2C_CLIENT_SCCB	0x9000		/* Use Omnivision SCCB protocol */
+					/* Must match I2C_M_STOP|IGNORE_NAK */
+
+/*
+ * Data for SMBus Messages
+ */
+#define I2C_SMBUS_BLOCK_MAX	32	/* As specified in SMBus standard */
+union i2c_smbus_data {
+	__u8 byte;
+	__u16 word;
+	__u8 block[I2C_SMBUS_BLOCK_MAX + 2]; /* block[0] is used for length */
+			       /* and one more for user-space compatibility */
+};
+
+/* i2c_smbus_xfer read or write markers */
+#define I2C_SMBUS_READ	1
+#define I2C_SMBUS_WRITE	0
+
+/* SMBus transaction types (size parameter in the above functions)
+   Note: these no longer correspond to the (arbitrary) PIIX4 internal codes! */
+#define I2C_SMBUS_QUICK		    0
+#define I2C_SMBUS_BYTE		    1
+#define I2C_SMBUS_BYTE_DATA	    2
+#define I2C_SMBUS_WORD_DATA	    3
+#define I2C_SMBUS_I2C_BLOCK_DATA    8
+
+/* This is the very generalized SMBus access routine. You probably do not
+   want to use this, though; one of the functions below may be much easier,
+   and probably just as fast.
+   Note that we use i2c_adapter here, because you do not need a specific
+   smbus adapter to call this function. */
+extern s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
+			  unsigned short flags, char read_write, u8 command,
+			  int size, union i2c_smbus_data *data);
+
+/* Now follow the 'nice' access routines. These also document the calling
+   conventions of i2c_smbus_xfer. */
+
+extern s32 i2c_smbus_read_byte(const struct i2c_client *client);
+extern s32 i2c_smbus_write_byte(const struct i2c_client *client, u8 value);
+extern s32 i2c_smbus_read_byte_data(const struct i2c_client *client,
+				    u8 command);
+extern s32 i2c_smbus_write_byte_data(const struct i2c_client *client,
+				     u8 command, u8 value);
+extern s32 i2c_smbus_read_word_data(const struct i2c_client *client,
+				    u8 command);
+extern s32 i2c_smbus_write_word_data(const struct i2c_client *client,
+				     u8 command, u16 value);
+
+/* Returns the number of read bytes */
+extern s32 i2c_smbus_read_i2c_block_data(const struct i2c_client *client,
+					 u8 command, u8 length, u8 *values);
+extern s32 i2c_smbus_write_i2c_block_data(const struct i2c_client *client,
+					  u8 command, u8 length,
+					  const u8 *values);
 
 /**
  * struct i2c_board_info - template for device creation
@@ -132,6 +188,7 @@ static inline int i2c_register_board_info(int busnum,
 #endif
 extern int i2c_add_numbered_adapter(struct i2c_adapter *adapter);
 struct i2c_adapter *i2c_get_adapter(int busnum);
+struct i2c_adapter *of_find_i2c_adapter_by_node(struct device_node *node);
 
 /* For devices that use several addresses, use i2c_new_dummy() to make
  * client handles for the extra addresses.
@@ -150,8 +207,6 @@ extern int i2c_master_recv(struct i2c_client *client, char *buf, int count);
 
 extern int i2c_read_reg(struct i2c_client *client, u32 addr, u8 *buf, u16 count);
 extern int i2c_write_reg(struct i2c_client *client, u32 addr, const u8 *buf, u16 count);
-
-#endif /* DOXYGEN_SHOULD_SKIP_THIS */
 
 extern struct bus_type i2c_bus;
 

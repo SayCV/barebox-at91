@@ -118,11 +118,13 @@
 #include <libbb.h>
 #include <glob.h>
 #include <getopt.h>
+#include <libfile.h>
 #include <libbb.h>
 #include <magicvar.h>
 #include <linux/list.h>
 #include <binfmt.h>
 #include <init.h>
+#include <shell.h>
 
 /*cmd_boot.c*/
 extern int do_bootd(int flag, int argc, char *argv[]);      /* do_bootd */
@@ -131,7 +133,6 @@ extern int do_bootd(int flag, int argc, char *argv[]);      /* do_bootd */
 
 #define EXIT_SUCCESS 0
 #define EOF -1
-#define syntax() syntax_err()
 #define xstrdup strdup
 #define error_msg printf
 
@@ -226,6 +227,11 @@ static char console_buffer[CONFIG_CBSIZE];		/* console I/O buffer	*/
  * the first three support $?, $#, and $1 */
 static unsigned int last_return_code;
 
+int shell_get_last_return_code(void)
+{
+	return last_return_code;
+}
+
 /* "globals" within this file */
 static uchar *ifs;
 static char map[256];
@@ -248,7 +254,7 @@ typedef struct {
  * available?  Where is it documented? */
 struct in_str {
 	const char *p;
-	int __promptme;
+	int interrupt;
 	int promptmode;
 	int (*get) (struct in_str *);
 	int (*peek) (struct in_str *);
@@ -259,8 +265,27 @@ struct in_str {
 
 #define final_printf debug
 
-static void syntax_err(void) {
-	 printf("syntax error\n");
+static void syntax(void)
+{
+	printf("syntax error\n");
+}
+
+static void syntaxf(const char *fmt, ...)
+{
+	va_list args;
+
+	printf("syntax error: ");
+
+	va_start(args, fmt);
+
+	vprintf(fmt, args);
+
+	va_end(args);
+}
+
+static void syntax_unexpected_token(const char *token)
+{
+	syntaxf("unexpected token `%s'\n", token);
 }
 
 /*   o_string manipulation: */
@@ -414,17 +439,16 @@ static void get_user_input(struct in_str *i)
 {
 	int n;
 	static char the_command[CONFIG_CBSIZE];
+	char *prompt;
 
-	i->__promptme = 1;
+	if (i->promptmode == 1)
+		prompt = getprompt();
+	else
+		prompt = CONFIG_PROMPT_HUSH_PS2;
 
-	if (i->promptmode == 1) {
-		n = readline(getprompt(), console_buffer, CONFIG_CBSIZE);
-	} else {
-		n = readline(CONFIG_PROMPT_HUSH_PS2, console_buffer, CONFIG_CBSIZE);
-	}
-
+	n = readline(prompt, console_buffer, CONFIG_CBSIZE);
 	if (n == -1 ) {
-		i->__promptme = 0;
+		i->interrupt = 1;
 		n = 0;
 	}
 
@@ -434,25 +458,27 @@ static void get_user_input(struct in_str *i)
 	if (i->promptmode == 1) {
 		strcpy(the_command,console_buffer);
 		i->p = the_command;
-	} else {
-		if (console_buffer[0] != '\n') {
-			if (strlen(the_command) + strlen(console_buffer)
-			    < CONFIG_CBSIZE) {
-				n = strlen(the_command);
-				the_command[n - 1] = ' ';
-				strcpy(&the_command[n], console_buffer);
-			}
-			else {
-				the_command[0] = '\n';
-				the_command[1] = '\0';
-			}
-		}
-		if (i->__promptme == 0) {
+		return;
+	}
+
+	if (console_buffer[0] != '\n') {
+		if (strlen(the_command) + strlen(console_buffer)
+		    < CONFIG_CBSIZE) {
+			n = strlen(the_command);
+			the_command[n - 1] = ' ';
+			strcpy(&the_command[n], console_buffer);
+		} else {
 			the_command[0] = '\n';
 			the_command[1] = '\0';
 		}
-		i->p = console_buffer;
 	}
+
+	if (i->interrupt) {
+		the_command[0] = '\n';
+		the_command[1] = '\0';
+	}
+
+	i->p = console_buffer;
 }
 
 /* This is the magic location that prints prompts
@@ -462,21 +488,23 @@ static int file_get(struct in_str *i)
 	int ch;
 
 	ch = 0;
+
 	/* If there is data waiting, eat it up */
-	if (i->p && *i->p) {
+	if (i->p && *i->p)
+		return *i->p++;
+
+	/* need to double check i->file because we might be doing something
+	 * more complicated by now, like sourcing or substituting. */
+	while (!i->p  || strlen(i->p) == 0 )
+		get_user_input(i);
+
+	i->promptmode = 2;
+
+	if (i->p && *i->p)
 		ch = *i->p++;
-	} else {
-		/* need to double check i->file because we might be doing something
-		 * more complicated by now, like sourcing or substituting. */
-			while (!i->p  || strlen(i->p) == 0 ) {
-				get_user_input(i);
-			}
-			i->promptmode = 2;
-			if (i->p && *i->p) {
-				ch = *i->p++;
-			}
-		debug("%s: got a %d\n", __func__, ch);
-	}
+
+	debug("%s: got a %d\n", __func__, ch);
+
 	return ch;
 }
 
@@ -492,7 +520,7 @@ static void setup_file_in_str(struct in_str *i)
 {
 	i->peek = file_peek;
 	i->get = file_get;
-	i->__promptme = 1;
+	i->interrupt = 0;
 	i->promptmode = 1;
 	i->p = NULL;
 }
@@ -501,12 +529,12 @@ static void setup_string_in_str(struct in_str *i, const char *s)
 {
 	i->peek = static_peek;
 	i->get = static_get;
-	i->__promptme = 1;
+	i->interrupt = 0;
 	i->promptmode = 1;
 	i->p = s;
 }
 
-#ifdef CONFIG_HUSH_GETOPT
+#ifdef CONFIG_CMD_GETOPT
 static int builtin_getopt(struct p_context *ctx, struct child_prog *child,
 		int argc, char *argv[])
 {
@@ -707,6 +735,7 @@ static int run_pipe_real(struct p_context *ctx, struct pipe *pi)
 	char *p;
 	glob_t globbuf = {};
 	int ret;
+	int rcode;
 # if __GNUC__
 	/* Avoid longjmp clobbering */
 	(void) &i;
@@ -726,8 +755,6 @@ static int run_pipe_real(struct p_context *ctx, struct pipe *pi)
 	child = &pi->progs[0];
 
 	if (child->group) {
-		int rcode;
-
 		debug("non-subshell grouping\n");
 		rcode = run_list_real(ctx, child->group);
 
@@ -762,7 +789,9 @@ static int run_pipe_real(struct p_context *ctx, struct pipe *pi)
 
 			free(name);
 			p = insert_var_value(child->argv[i]);
-			set_local_var(p, export_me);
+			rcode = set_local_var(p, export_me);
+			if (rcode)
+				return 1;
 
 			if (p != child->argv[i])
 				free(p);
@@ -771,7 +800,9 @@ static int run_pipe_real(struct p_context *ctx, struct pipe *pi)
 	}
 	for (i = 0; is_assignment(child->argv[i]); i++) {
 		p = insert_var_value(child->argv[i]);
-		set_local_var(p, 0);
+		rcode = set_local_var(p, 0);
+		if (rcode)
+			return 1;
 
 		if (p != child->argv[i]) {
 			child->sp--;
@@ -781,7 +812,6 @@ static int run_pipe_real(struct p_context *ctx, struct pipe *pi)
 	if (child->sp) {
 		char * str = NULL;
 		struct p_context ctx1;
-		int rcode;
 
 		str = make_string((child->argv + i));
 		rcode = parse_string_outer(&ctx1, str, FLAG_EXIT_FROM_LOOP | FLAG_REPARSING);
@@ -796,7 +826,7 @@ static int run_pipe_real(struct p_context *ctx, struct pipe *pi)
 	remove_quotes(globbuf.gl_pathc, globbuf.gl_pathv);
 
 	if (!strcmp(globbuf.gl_pathv[0], "getopt") &&
-			IS_ENABLED(CONFIG_HUSH_GETOPT)) {
+			IS_ENABLED(CONFIG_CMD_GETOPT)) {
 		ret = builtin_getopt(ctx, child, globbuf.gl_pathc, globbuf.gl_pathv);
 	} else if (!strcmp(globbuf.gl_pathv[0], "exit")) {
 		ret = builtin_exit(ctx, child, globbuf.gl_pathc, globbuf.gl_pathv);
@@ -1127,7 +1157,7 @@ static void initialize_context(struct p_context *ctx)
 
 static void release_context(struct p_context *ctx)
 {
-#ifdef CONFIG_HUSH_GETOPT
+#ifdef CONFIG_CMD_GETOPT
 	struct option *opt, *tmp;
 
 	list_for_each_entry_safe(opt, tmp, &ctx->options, list) {
@@ -1165,59 +1195,61 @@ static struct reserved_combo reserved_list[] = {
 	{ "do",    RES_DO,    FLAG_DONE },
 	{ "done",  RES_DONE,  FLAG_END  }
 };
-#define NRES (sizeof(reserved_list)/sizeof(struct reserved_combo))
 
 static int reserved_word(o_string *dest, struct p_context *ctx)
 {
 	struct reserved_combo *r;
+	int i;
 
-	for (r = reserved_list; r < reserved_list + NRES; r++) {
-		if (strcmp(dest->data, r->literal) == 0) {
+	for (i = 0; i < ARRAY_SIZE(reserved_list); i++) {
+		r = &reserved_list[i];
 
-			debug("found reserved word %s, code %d\n",r->literal,r->code);
+		if (strcmp(dest->data, r->literal))
+			continue;
 
-			if (r->flag & FLAG_START) {
-				struct p_context *new = xmalloc(sizeof(struct p_context));
+		debug("found reserved word %s, code %d\n",r->literal,r->code);
 
-				debug("push stack\n");
+		if (r->flag & FLAG_START) {
+			struct p_context *new = xmalloc(sizeof(struct p_context));
 
-				if (ctx->w == RES_IN || ctx->w == RES_FOR) {
-					syntax();
-					free(new);
-					ctx->w = RES_SNTX;
-					b_reset(dest);
+			debug("push stack\n");
 
-					return 1;
-				}
-				*new = *ctx;   /* physical copy */
-				initialize_context(ctx);
-				ctx->stack = new;
-			} else if (ctx->w == RES_NONE || !(ctx->old_flag & (1 << r->code))) {
+			if (ctx->w == RES_IN || ctx->w == RES_FOR) {
 				syntax();
+				free(new);
 				ctx->w = RES_SNTX;
 				b_reset(dest);
+
 				return 1;
 			}
-
-			ctx->w = r->code;
-			ctx->old_flag = r->flag;
-
-			if (ctx->old_flag & FLAG_END) {
-				struct p_context *old;
-
-				debug("pop stack\n");
-
-				done_pipe(ctx,PIPE_SEQ);
-				old = ctx->stack;
-				old->child->group = ctx->list_head;
-				*ctx = *old;   /* physical copy */
-				free(old);
-			}
-
+			*new = *ctx;   /* physical copy */
+			initialize_context(ctx);
+			ctx->stack = new;
+		} else if (ctx->w == RES_NONE || !(ctx->old_flag & (1 << r->code))) {
+			syntax_unexpected_token(r->literal);
+			ctx->w = RES_SNTX;
 			b_reset(dest);
-
 			return 1;
 		}
+
+		ctx->w = r->code;
+		ctx->old_flag = r->flag;
+
+		if (ctx->old_flag & FLAG_END) {
+			struct p_context *old;
+
+			debug("pop stack\n");
+
+			done_pipe(ctx,PIPE_SEQ);
+			old = ctx->stack;
+			old->child->group = ctx->list_head;
+			*ctx = *old;   /* physical copy */
+			free(old);
+		}
+
+		b_reset(dest);
+
+		return 1;
 	}
 
 	return 0;
@@ -1459,7 +1491,7 @@ static int parse_stream(o_string *dest, struct p_context *ctx,
 
 	while ((ch = b_getch(input)) != EOF) {
 		m = map[ch];
-		if (input->__promptme == 0)
+		if (input->interrupt)
 			return 1;
 		next = (ch == '\n') ? 0 : b_peek(input);
 
@@ -1517,7 +1549,7 @@ static int parse_stream(o_string *dest, struct p_context *ctx,
 			dest->nonnull = 1;
 			b_addchr(dest, '\'');
 			while (ch = b_getch(input), ch != EOF && ch != '\'') {
-				if (input->__promptme == 0)
+				if (input->interrupt)
 					return 1;
 				b_addchr(dest,ch);
 			}
@@ -1542,7 +1574,7 @@ static int parse_stream(o_string *dest, struct p_context *ctx,
 				b_getch(input);
 				done_pipe(ctx, PIPE_AND);
 			} else {
-				syntax_err();
+				syntax();
 				return 1;
 			}
 			break;
@@ -1555,7 +1587,7 @@ static int parse_stream(o_string *dest, struct p_context *ctx,
 				/* we could pick up a file descriptor choice here
 				 * with redirect_opt_num(), but bash doesn't do it.
 				 * "echo foo 2| cat" yields "foo 2". */
-				syntax_err();
+				syntax();
 				return 1;
 			}
 			break;
@@ -1608,6 +1640,39 @@ static void update_ifs_map(void)
 	mapset(ifs, 2);			/* also flow through if quoted */
 }
 
+/*
+ * shell_expand - Expand shell variables in a string.
+ * @str:	The input string containing shell variables like
+ *		$var or ${var}
+ * Return:	The expanded string. Must be freed with free().
+ */
+char *shell_expand(char *str)
+{
+	struct p_context ctx = {};
+	o_string o = {};
+	char *res, *parsed;
+
+	remove_quotes_in_str(str);
+
+	o.quote = 1;
+
+	initialize_context(&ctx);
+
+	parse_string(&o, &ctx, str);
+
+	parsed = xmemdup(o.data, o.length + 1);
+	parsed[o.length] = 0;
+
+	res = insert_var_value(parsed);
+	if (res != parsed)
+		free(parsed);
+
+	free_pipe_list(ctx.list_head, 0);
+	b_free(&o);
+
+	return res;
+}
+
 /* most recursion does not come through here, the exeception is
  * from builtin_source() */
 static int parse_stream_outer(struct p_context *ctx, struct in_str *inp, int flag)
@@ -1649,7 +1714,7 @@ static int parse_stream_outer(struct p_context *ctx, struct in_str *inp, int fla
 				free(ctx->stack);
 				b_reset(&temp);
 			}
-			if (inp->__promptme == 0)
+			if (inp->interrupt)
 				printf("<INTERRUPT>\n");
 			temp.nonnull = 0;
 			temp.quote = 0;
@@ -1660,7 +1725,7 @@ static int parse_stream_outer(struct p_context *ctx, struct in_str *inp, int fla
 		b_free(&temp);
 	} while (rcode != -1 && !(flag & FLAG_EXIT_FROM_LOOP));   /* loop on syntax errors, return on EOF */
 
-	return (code != 0) ? 1 : 0;
+	return code;
 }
 
 static int parse_string_outer(struct p_context *ctx, const char *s, int flag)
@@ -1795,7 +1860,7 @@ static char * make_string(char ** inp)
 	return str;
 }
 
-int run_command (const char *cmd, int flag)
+int run_command(const char *cmd)
 {
 	struct p_context ctx;
 	int ret;
@@ -1847,14 +1912,17 @@ int run_shell(void)
 	int rcode;
 	struct in_str input;
 	struct p_context ctx;
+	int exit = 0;
 
 	do {
 		setup_file_in_str(&input);
 		rcode = parse_stream_outer(&ctx, &input, FLAG_PARSE_SEMICOLON);
-		if (rcode < -1)
+		if (rcode < -1) {
+			exit = 1;
 			rcode = -rcode - 2;
+		}
 		release_context(&ctx);
-	} while (!input.__promptme);
+	} while (!exit);
 
 	return rcode;
 }
@@ -1867,15 +1935,11 @@ static int do_sh(int argc, char *argv[])
 	return execute_script(argv[1], argc - 1, argv + 1);
 }
 
-static const __maybe_unused char cmd_sh_help[] =
-"Usage: sh filename [arguments]\n"
-"\n"
-"Execute a shell script\n";
-
 BAREBOX_CMD_START(sh)
 	.cmd		= do_sh,
-	.usage		= "run shell script",
-	BAREBOX_CMD_HELP(cmd_sh_help)
+	BAREBOX_CMD_DESC("execute a shell script")
+	BAREBOX_CMD_OPTS("FILE [ARGUMENT...]")
+	BAREBOX_CMD_GROUP(CMD_GRP_SCRIPT)
 BAREBOX_CMD_END
 
 static int do_source(int argc, char *argv[])
@@ -1903,21 +1967,17 @@ static int do_source(int argc, char *argv[])
 
 static const char *source_aliases[] = { ".", NULL};
 
-static const __maybe_unused char cmd_source_help[] =
-"Usage: .  filename [arguments]\n"
-"or     source filename [arguments]\n"
-"\n"
-"Read  and  execute  commands  from filename in the current shell\n"
-"environment and return the exit status of the last command  exe-\n"
-"cuted from filename\n";
-
-static const __maybe_unused char cmd_source_usage[] =
-"execute shell script in current shell environment";
+BAREBOX_CMD_HELP_START(source)
+BAREBOX_CMD_HELP_TEXT("Read and execute commands from FILE in the current shell environment.")
+BAREBOX_CMD_HELP_TEXT("and return the exit status of the last command executed.")
+BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(source)
 	.aliases	= source_aliases,
 	.cmd		= do_source,
-	.usage		= cmd_source_usage,
+	BAREBOX_CMD_DESC("execute shell script in current shell environment")
+	BAREBOX_CMD_OPTS("FILE [ARGUMENT...]")
+	BAREBOX_CMD_GROUP(CMD_GRP_SCRIPT)
 	BAREBOX_CMD_HELP(cmd_source_help)
 BAREBOX_CMD_END
 
@@ -1930,31 +1990,32 @@ static int do_dummy_command(int argc, char *argv[])
 	return 0;
 }
 
-static const __maybe_unused char cmd_exit_help[] =
-"Usage: exit [n]\n"
-"\n"
-"exit script with a status of n. If n is omitted, the exit status is that\n"
-"of the last command executed\n";
+BAREBOX_CMD_HELP_START(exit)
+BAREBOX_CMD_HELP_TEXT("Exit script with status ERRLVL n. If ERRLVL is omitted, the exit status is")
+BAREBOX_CMD_HELP_TEXT("of the last command executed")
+BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(exit)
 	.cmd		= do_dummy_command,
-	.usage		= "exit script",
+	BAREBOX_CMD_DESC("exit script")
+	BAREBOX_CMD_OPTS("[ERRLVL]")
+	BAREBOX_CMD_GROUP(CMD_GRP_SCRIPT)
 	BAREBOX_CMD_HELP(cmd_exit_help)
 BAREBOX_CMD_END
 
-#ifdef CONFIG_HUSH_GETOPT
-static const __maybe_unused char cmd_getopt_help[] =
-"Usage: getopt <optstring> <var>\n"
-"\n"
-"hush option parser. <optstring> is a string with valid options. Add\n"
-"a colon to an options if this option has a required argument or two\n"
-"colons for an optional argument. The current option is saved in <var>,\n"
-"arguments are saved in OPTARG. After this command additional nonopts\n"
-"can be accessed starting from $1\n";
+#ifdef CONFIG_CMD_GETOPT
+BAREBOX_CMD_HELP_START(getopt)
+BAREBOX_CMD_HELP_TEXT("OPTSTRING contains the option letters. Add a colon to an options if this")
+BAREBOX_CMD_HELP_TEXT("option has a required argument or two colons for an optional argument. The")
+BAREBOX_CMD_HELP_TEXT("current option is saved in VAR, arguments are saved in $OPTARG. Any")
+BAREBOX_CMD_HELP_TEXT("non-option arguments can be accessed starting from $1.")
+BAREBOX_CMD_HELP_END
 
 BAREBOX_CMD_START(getopt)
 	.cmd		= do_dummy_command,
-	.usage		= "getopt <optstring> <var>",
+	BAREBOX_CMD_DESC("parse option arguments")
+	BAREBOX_CMD_OPTS("OPTSTRING VAR")
+	BAREBOX_CMD_GROUP(CMD_GRP_SCRIPT)
 	BAREBOX_CMD_HELP(cmd_getopt_help)
 BAREBOX_CMD_END
 #endif

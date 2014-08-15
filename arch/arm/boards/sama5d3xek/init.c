@@ -22,11 +22,9 @@
 #include <generated/mach-types.h>
 #include <partition.h>
 #include <fs.h>
-#include <linux/stat.h>
-#include <envfs.h>
 #include <fcntl.h>
 #include <io.h>
-#include <asm/hardware.h>
+#include <mach/hardware.h>
 #include <nand.h>
 #include <sizes.h>
 #include <linux/mtd/nand.h>
@@ -35,10 +33,10 @@
 #include <mach/at91sam9_smc.h>
 #include <gpio.h>
 #include <mach/io.h>
+#include <mach/iomux.h>
 #include <mach/at91_pmc.h>
 #include <mach/at91_rstc.h>
 #include <mach/at91sam9x5_matrix.h>
-#include <mach/bootmode.h>
 #include <input/qt1070.h>
 #include <readkey.h>
 #include <poller.h>
@@ -74,21 +72,30 @@ static struct atmel_nand_data nand_pdata = {
 };
 
 static struct sam9_smc_config cm_nand_smc_config = {
-	.ncs_read_setup		= 0,
-	.nrd_setup		= 1,
-	.ncs_write_setup	= 0,
-	.nwe_setup		= 1,
+	.ncs_read_setup		= 1,
+	.nrd_setup		= 2,
+	.ncs_write_setup	= 1,
+	.nwe_setup		= 2,
 
-	.ncs_read_pulse		= 6,
-	.nrd_pulse		= 4,
+	.ncs_read_pulse		= 5,
+	.nrd_pulse		= 3,
 	.ncs_write_pulse	= 5,
 	.nwe_pulse		= 3,
 
-	.read_cycle		= 6,
-	.write_cycle		= 5,
+	.read_cycle		= 8,
+	.write_cycle		= 8,
 
 	.mode			= AT91_SMC_READMODE | AT91_SMC_WRITEMODE | AT91_SMC_EXNWMODE_DISABLE,
-	.tdf_cycles		= 1,
+	.tdf_cycles		= 3,
+
+	.tclr			= 3,
+	.tadl			= 10,
+	.tar			= 3,
+	.ocms			= 0,
+	.trr			= 4,
+	.twb			= 5,
+	.rbnsel			= 3,
+	.nfsel			= 1
 };
 
 static void ek_add_device_nand(void)
@@ -104,7 +111,7 @@ static void ek_add_device_nand(void)
 		cm_nand_smc_config.mode |= AT91_SMC_DBW_8;
 
 	/* configure chip-select 3 (NAND) */
-	sam9_smc_configure(0, 3, &cm_nand_smc_config);
+	sama5_smc_configure(0, 3, &cm_nand_smc_config);
 
 	at91_add_device_nand(&nand_pdata);
 }
@@ -402,6 +409,38 @@ static void ek_add_device_hdmi(void)
 }
 #endif
 
+static const struct devfs_partition at91sama5d3xek_nand0_partitions[] = {
+	{
+		.offset = 0x00000,
+		.size = SZ_256K,
+		.flags = DEVFS_PARTITION_FIXED,
+		.name = "at91bootstrap_raw",
+		.bbname = "at91bootstrap",
+	}, {
+		.offset = DEVFS_PARTITION_APPEND, /* 256 KiB */
+		.size = SZ_256K + SZ_128K,
+		.flags = DEVFS_PARTITION_FIXED,
+		.name = "self_raw",
+		.bbname = "self0",
+	},
+	/* hole of 128 KiB */
+	{
+		.offset = SZ_512K + SZ_256K,
+		.size = SZ_256K,
+		.flags = DEVFS_PARTITION_FIXED,
+		.name = "env_raw",
+		.bbname = "env0",
+	}, {
+		.offset = DEVFS_PARTITION_APPEND, /* 1 MiB */
+		.size = SZ_256K,
+		.flags = DEVFS_PARTITION_FIXED,
+		.name = "env_raw1",
+		.bbname = "env1",
+	}, {
+		/* sentinel */
+	}
+};
+
 static int at91sama5d3xek_devices_init(void)
 {
 	ek_add_device_w1();
@@ -413,62 +452,26 @@ static int at91sama5d3xek_devices_init(void)
 	ek_add_device_mci();
 	ek_add_device_lcdc();
 
-	armlinux_set_bootparams((void *)(SAMA5_DDRCS + 0x100));
-
-	if (at91_boot_media_at25() && IS_ENABLED(CONFIG_DRIVER_SPI_ATMEL)) {
-		devfs_add_partition("m25p0", 0x00000, SZ_64K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
-		devfs_add_partition("m25p0", SZ_64K, SZ_256K + SZ_128K, DEVFS_PARTITION_FIXED, "self_raw");
-		devfs_add_partition("m25p0", SZ_64K + SZ_256K + SZ_128K, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw");
-		devfs_add_partition("m25p0", SZ_64K + SZ_512K + SZ_128K, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw1");
-	} else if (!at91_boot_from_mci()) {
-		devfs_add_partition("nand0", 0x00000, SZ_256K, DEVFS_PARTITION_FIXED, "at91bootstrap_raw");
-		dev_add_bb_dev("at91bootstrap_raw", "at91bootstrap");
-		devfs_add_partition("nand0", SZ_256K, SZ_256K + SZ_128K, DEVFS_PARTITION_FIXED, "self_raw");
-		dev_add_bb_dev("self_raw", "self0");
-		devfs_add_partition("nand0", SZ_512K + SZ_256K, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw");
-		dev_add_bb_dev("env_raw", "env0");
-		devfs_add_partition("nand0", SZ_1M, SZ_256K, DEVFS_PARTITION_FIXED, "env_raw1");
-		dev_add_bb_dev("env_raw1", "env1");
-	}
+	devfs_create_partitions("nand0", at91sama5d3xek_nand0_partitions);
 
 	return 0;
 }
 device_initcall(at91sama5d3xek_devices_init);
 
-#if defined(CONFIG_DEFAULT_ENVIRONMENT) && defined(CONFIG_MCI_ATMEL)
-static int sama5d3xek_env_init(void)
-{
-	struct stat s;
-	char *diskdev = "/dev/disk0.0";
-	int ret;
-
-	if (!at91_boot_from_mci())
-		return 0;
-
-	ret = stat(diskdev, &s);
-	if (ret) {
-		printf("no %s. using default env\n", diskdev);
-		return ret;
-	}
-
-	mkdir ("/boot", 0755);
-	ret = mount(diskdev, "fat", "/boot");
-	if (ret) {
-		printf("failed to mount %s\n", diskdev);
-		return ret;
-	}
-
-	default_environment_path = "/boot/bareboxenv";
-
-	return 0;
-}
-late_initcall(sama5d3xek_env_init);
-#endif
-
 static int at91sama5d3xek_console_init(void)
 {
+	barebox_set_model("Atmel sama5d3x-ek");
+	barebox_set_hostname("sama5d3x-ek");
+
 	at91_register_uart(0, 0);
 	at91_register_uart(2, 0);
 	return 0;
 }
 console_initcall(at91sama5d3xek_console_init);
+
+static int at91sama5d3xek_main_clock(void)
+{
+	at91_set_main_clock(12000000);
+	return 0;
+}
+pure_initcall(at91sama5d3xek_main_clock);

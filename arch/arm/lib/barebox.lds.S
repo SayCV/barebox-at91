@@ -75,6 +75,8 @@ SECTIONS
 	. = ALIGN(4);
 	.data : { *(.data*) }
 
+	.barebox_imd : { BAREBOX_IMD }
+
 	. = .;
 	__barebox_cmd_start = .;
 	.barebox_cmd : { BAREBOX_CMDS }
@@ -91,6 +93,8 @@ SECTIONS
 	__usymtab_start = .;
 	__usymtab : { BAREBOX_SYMS }
 	__usymtab_end = .;
+
+	.oftables : { BAREBOX_CLK_TABLE() }
 
 	.dtb : { BAREBOX_DTB() }
 

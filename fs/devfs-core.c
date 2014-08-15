@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <malloc.h>
 #include <ioctl.h>
+#include <nand.h>
 #include <linux/err.h>
 #include <linux/mtd/mtd.h>
 
@@ -56,6 +57,33 @@ struct cdev *cdev_by_name(const char *filename)
 	return NULL;
 }
 
+/**
+ * device_find_partition - find a partition belonging to a physical device
+ *
+ * @dev: the device which should be searched for partitions
+ * @name: the partition name
+ */
+struct cdev *device_find_partition(struct device_d *dev, const char *name)
+{
+	struct cdev *cdev;
+	struct device_d *child;
+
+	list_for_each_entry(cdev, &dev->cdevs, devices_list) {
+		if (!cdev->partname)
+			continue;
+		if (!strcmp(cdev->partname, name))
+			return cdev;
+	}
+
+	device_for_each_child(dev, child) {
+		cdev = device_find_partition(child, name);
+		if (cdev)
+			return cdev;
+	}
+
+	return NULL;
+}
+
 int cdev_find_free_index(const char *basename)
 {
 	int i;
@@ -70,6 +98,14 @@ int cdev_find_free_index(const char *basename)
 	return -EBUSY;	/* all indexes are used */
 }
 
+int cdev_do_open(struct cdev *cdev, unsigned long flags)
+{
+	if (cdev->ops->open)
+		return cdev->ops->open(cdev, flags);
+
+	return 0;
+}
+
 struct cdev *cdev_open(const char *name, unsigned long flags)
 {
 	struct cdev *cdev = cdev_by_name(name);
@@ -78,11 +114,9 @@ struct cdev *cdev_open(const char *name, unsigned long flags)
 	if (!cdev)
 		return NULL;
 
-	if (cdev->ops->open) {
-		ret = cdev->ops->open(cdev, flags);
-		if (ret)
-			return NULL;
-	}
+	ret = cdev_do_open(cdev, flags);
+	if (ret)
+		return NULL;
 
 	return cdev;
 }
@@ -138,6 +172,7 @@ static int partition_ioctl(struct cdev *cdev, int request, void *buf)
 			user->erasesize	= cdev->mtd->erasesize;
 			user->writesize	= cdev->mtd->writesize;
 			user->oobsize	= cdev->mtd->oobsize;
+			user->subpagesize = cdev->mtd->writesize >> cdev->mtd->subpage_sft;
 			user->mtd	= cdev->mtd;
 			/* The below fields are obsolete */
 			user->ecctype	= -1;
@@ -226,45 +261,86 @@ int devfs_remove(struct cdev *cdev)
 	return 0;
 }
 
-int devfs_add_partition(const char *devname, loff_t offset, loff_t size,
-		int flags, const char *name)
+static struct cdev *__devfs_add_partition(struct cdev *cdev,
+		const struct devfs_partition *partinfo, loff_t *end)
 {
-	struct cdev *cdev, *new;
+	loff_t offset, size;
+	static struct cdev *new;
 
-	cdev = cdev_by_name(name);
-	if (cdev)
-		return -EEXIST;
+	if (cdev_by_name(partinfo->name))
+		return ERR_PTR(-EEXIST);
 
-	cdev = cdev_by_name(devname);
-	if (!cdev)
-		return -ENOENT;
+	if (partinfo->offset > 0)
+		offset = partinfo->offset;
+	else if (partinfo->offset == 0)
+		/* append to previous partition */
+		offset = *end;
+	else
+		/* relative to end of cdev */
+		offset = cdev->size + partinfo->offset;
 
-	if (offset + size > cdev->size)
-		return -EINVAL;
+	if (partinfo->size > 0)
+		size = partinfo->size;
+	else
+		size = cdev->size + partinfo->size - offset;
 
-	new = xzalloc(sizeof (*new));
-	new->name = strdup(name);
+	if (offset >= 0 && offset < *end)
+		pr_debug("partition %s not after previous partition\n",
+				partinfo->name);
+
+	*end = offset + size;
+
+	if (offset < 0 || *end > cdev->size) {
+		pr_warn("partition %s not completely inside device %s\n",
+				partinfo->name, cdev->name);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (IS_ENABLED(CONFIG_MTD) && cdev->mtd) {
+		struct mtd_info *mtd;
+
+		mtd = mtd_add_partition(cdev->mtd, offset, size,
+				partinfo->flags, partinfo->name);
+		if (IS_ERR(mtd))
+			return (void *)mtd;
+		return &mtd->cdev;
+	}
+
+	new = xzalloc(sizeof(*new));
+	new->name = strdup(partinfo->name);
+	if (!strncmp(cdev->name, partinfo->name, strlen(cdev->name)))
+		new->partname = xstrdup(partinfo->name + strlen(cdev->name) + 1);
+
 	new->ops = cdev->ops;
 	new->priv = cdev->priv;
 	new->size = size;
-	new->offset = offset + cdev->offset;
-	new->dev = cdev->dev;
-	new->flags = flags | DEVFS_IS_PARTITION;
+	new->offset = cdev->offset + offset;
 
-#ifdef CONFIG_PARTITION_NEED_MTD
-	if (cdev->mtd) {
-		new->mtd = mtd_add_partition(cdev->mtd, offset, size, flags, name);
-		if (IS_ERR(new->mtd)) {
-			int ret = PTR_ERR(new->mtd);
-			free(new);
-			return ret;
-		}
-	}
-#endif
+	new->dev = cdev->dev;
+	new->flags = partinfo->flags | DEVFS_IS_PARTITION;
 
 	devfs_create(new);
 
-	return 0;
+	return new;
+}
+
+struct cdev *devfs_add_partition(const char *devname, loff_t offset,
+		loff_t size, unsigned int flags, const char *name)
+{
+	struct cdev *cdev;
+	loff_t end = 0;
+	const struct devfs_partition partinfo = {
+		.offset = offset,
+		.size = size,
+		.flags = flags,
+		.name = name,
+	};
+
+	cdev = cdev_by_name(devname);
+	if (!cdev)
+		return ERR_PTR(-ENOENT);
+
+	return __devfs_add_partition(cdev, &partinfo, &end);
 }
 
 int devfs_del_partition(const char *name)
@@ -276,22 +352,47 @@ int devfs_del_partition(const char *name)
 	if (!cdev)
 		return -ENOENT;
 
+	if (IS_ENABLED(CONFIG_MTD) && cdev->mtd) {
+		ret = mtd_del_partition(cdev->mtd);
+		return ret;
+	}
+
 	if (!(cdev->flags & DEVFS_IS_PARTITION))
 		return -EINVAL;
 	if (cdev->flags & DEVFS_PARTITION_FIXED)
 		return -EPERM;
-
-#ifdef CONFIG_PARTITION_NEED_MTD
-	if (cdev->mtd)
-		mtd_del_partition(cdev->mtd);
-#endif
 
 	ret = devfs_remove(cdev);
 	if (ret)
 		return ret;
 
 	free(cdev->name);
+	free(cdev->partname);
 	free(cdev);
+
+	return 0;
+}
+
+int devfs_create_partitions(const char *devname,
+		const struct devfs_partition partinfo[])
+{
+	loff_t offset = 0;
+	struct cdev *cdev;
+
+	cdev = cdev_by_name(devname);
+	if (!cdev)
+		return -ENOENT;
+
+	for (; partinfo->name; ++partinfo) {
+		struct cdev *new;
+
+		new = __devfs_add_partition(cdev, partinfo, &offset);
+		if (IS_ERR(new))
+			return PTR_ERR(new);
+
+		if (partinfo->bbname)
+			dev_add_bb_dev(partinfo->name, partinfo->bbname);
+	}
 
 	return 0;
 }

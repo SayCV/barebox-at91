@@ -15,9 +15,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <common.h>
@@ -99,13 +96,9 @@ static int do_mmuinfo(int argc, char *argv[])
 	return 0;
 }
 
-BAREBOX_CMD_HELP_START(mmuinfo)
-BAREBOX_CMD_HELP_USAGE("mmuinfo <address>\n")
-BAREBOX_CMD_HELP_SHORT("Show MMU/cache information for an address.\n")
-BAREBOX_CMD_HELP_END
-
 BAREBOX_CMD_START(mmuinfo)
 	.cmd            = do_mmuinfo,
-	.usage		= "mmuinfo <address>",
-	BAREBOX_CMD_HELP(cmd_mmuinfo_help)
+	BAREBOX_CMD_DESC("show MMU/cache information of an address")
+	BAREBOX_CMD_OPTS("ADDRESS")
+	BAREBOX_CMD_GROUP(CMD_GRP_INFO)
 BAREBOX_CMD_END

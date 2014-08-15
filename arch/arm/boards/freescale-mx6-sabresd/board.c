@@ -20,7 +20,7 @@
 #include <environment.h>
 #include <mach/imx6-regs.h>
 #include <fec.h>
-#include <mach/gpio.h>
+#include <gpio.h>
 #include <asm/armlinux.h>
 #include <generated/mach-types.h>
 #include <partition.h>
@@ -33,21 +33,12 @@
 #include <mach/imx6.h>
 #include <mach/devices-imx6.h>
 #include <mach/iomux-mx6.h>
-#include <mach/gpio.h>
 #include <spi/spi.h>
 #include <mach/spi.h>
 #include <mach/usb.h>
 
 #define PHY_ID_AR8031	0x004dd074
 #define AR_PHY_ID_MASK	0xffffffff
-
-static int sabresd_mem_init(void)
-{
-	arm_add_mem_device("ram0", 0x10000000, SZ_1G);
-
-	return 0;
-}
-mem_initcall(sabresd_mem_init);
 
 static int ar8031_phy_fixup(struct phy_device *dev)
 {
@@ -72,53 +63,25 @@ static int ar8031_phy_fixup(struct phy_device *dev)
 	return 0;
 }
 
-static void sabresd_phy_reset(void)
-{
-	/* Reset AR8031 PHY */
-	gpio_direction_output(IMX_GPIO_NR(1, 25) , 0);
-	udelay(500);
-	gpio_set_value(IMX_GPIO_NR(1, 25), 1);
-}
-
-static inline int imx6_iim_register_fec_ethaddr(void)
-{
-	u32 value;
-	u8 buf[6];
-
-	value = readl(MX6_OCOTP_BASE_ADDR + 0x630);
-	buf[0] = (value >> 8);
-	buf[1] = value;
-
-	value = readl(MX6_OCOTP_BASE_ADDR + 0x620);
-	buf[2] = value >> 24;
-	buf[3] = value >> 16;
-	buf[4] = value >> 8;
-	buf[5] = value;
-
-	eth_register_ethaddr(0, buf);
-
-	return 0;
-}
-
 static int sabresd_devices_init(void)
 {
-	armlinux_set_bootparams((void *)0x10000100);
-	armlinux_set_architecture(3980);
+	if (!of_machine_is_compatible("fsl,imx6q-sabresd"))
+		return 0;
 
-	devfs_add_partition("disk0", 0, SZ_1M, DEVFS_PARTITION_FIXED, "self0");
-	devfs_add_partition("disk0", SZ_1M + SZ_1M, SZ_512K, DEVFS_PARTITION_FIXED, "env0");
+	armlinux_set_architecture(3980);
+	barebox_set_hostname("sabresd");
+
 	return 0;
 }
 device_initcall(sabresd_devices_init);
 
 static int sabresd_coredevices_init(void)
 {
-	sabresd_phy_reset();
+	if (!of_machine_is_compatible("fsl,imx6q-sabresd"))
+		return 0;
 
 	phy_register_fixup_for_uid(PHY_ID_AR8031, AR_PHY_ID_MASK,
 			ar8031_phy_fixup);
-
-	imx6_iim_register_fec_ethaddr();
 
 	return 0;
 }
@@ -126,12 +89,4 @@ static int sabresd_coredevices_init(void)
  * Do this before the fec initializes but after our
  * gpios are available.
  */
-fs_initcall(sabresd_coredevices_init);
-
-static int sabresd_core_init(void)
-{
-	imx6_init_lowlevel();
-
-	return 0;
-}
-core_initcall(sabresd_core_init);
+coredevice_initcall(sabresd_coredevices_init);

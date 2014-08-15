@@ -28,32 +28,6 @@
 
 #include <param.h>
 
-/**
- * @file
- * @brief Main description of the device/driver model
- */
-
-/** @page driver_model Main description of the device/driver model
- *
- * We follow a rather simplistic driver model here. There is a
- * @code struct device_d @endcode
- * which describes a particular device present in the system.
- *
- * On the other side a
- * @code struct driver_d @endcode
- * represents a driver present in the system.
- *
- * Both structs find together via the members 'type' (int) and 'name' (char *).
- * If both members match, the driver's probe function is called with the
- * struct device_d as argument.
- *
- * People familiar with the Linux platform bus will recognize this behaviour
- * and in fact many things were stolen from there. Some selected members of the
- * structs will be described in this document.
- */
-
-/*@{*/	/* do not delete, doxygen relevant */
-
 struct filep;
 struct bus_type;
 
@@ -159,6 +133,7 @@ int device_probe(struct device_d *dev);
 
 /* detect devices attached to this device (cards, disks,...) */
 int device_detect(struct device_d *dev);
+int device_detect_by_name(const char *devname);
 
 /* Unregister a device. This function can fail, e.g. when the device
  * has children.
@@ -202,11 +177,13 @@ static inline const char *dev_name(const struct device_d *dev)
 /*
  * get resource 'num' for a device
  */
-struct resource *dev_get_resource(struct device_d *dev, int num);
+struct resource *dev_get_resource(struct device_d *dev, unsigned long type,
+				  int num);
 /*
  * get resource base 'name' for a device
  */
 struct resource *dev_get_resource_by_name(struct device_d *dev,
+					  unsigned long type,
 					  const char *name);
 /*
  * get register base 'name' for a device
@@ -218,6 +195,7 @@ void *dev_get_mem_region_by_name(struct device_d *dev, const char *name);
  */
 void __iomem *dev_request_mem_region_by_name(struct device_d *dev,
 					     const char *name);
+
 /*
  * get register base 'num' for a device
  */
@@ -227,6 +205,15 @@ void *dev_get_mem_region(struct device_d *dev, int num);
  * exlusively request register base 'num' for a device
  */
 void __iomem *dev_request_mem_region(struct device_d *dev, int num);
+
+struct device_d *device_alloc(const char *devname, int id);
+
+int device_add_resources(struct device_d *dev, const struct resource *res, int num);
+
+int device_add_resource(struct device_d *dev, const char *resname,
+		resource_size_t start, resource_size_t size, unsigned int flags);
+
+int device_add_data(struct device_d *dev, void *data, size_t size);
 
 /*
  * register a generic device
@@ -265,7 +252,7 @@ static inline struct device_d *add_ns16550_device(int id, resource_size_t start,
 		resource_size_t size, int flags, struct NS16550_plat *pdata)
 {
 	return add_generic_device("ns16550_serial", id, NULL, start, size,
-				  IORESOURCE_MEM | flags, pdata);
+				  flags, pdata);
 }
 
 #ifdef CONFIG_DRIVER_NET_DM9K
@@ -383,6 +370,7 @@ struct bus_type {
 };
 
 int bus_register(struct bus_type *bus);
+int device_match(struct device_d *dev, struct driver_d *drv);
 
 extern struct list_head bus_list;
 
@@ -413,6 +401,8 @@ int platform_driver_register(struct driver_d *drv);
 	}						\
 	level##_initcall(drv##_register)
 
+#define coredevice_platform_driver(drv)	\
+	register_driver_macro(coredevice,platform,drv)
 #define device_platform_driver(drv)	\
 	register_driver_macro(device,platform,drv)
 #define console_platform_driver(drv)	\
@@ -443,19 +433,25 @@ struct cdev {
 	struct device_d *dev;
 	struct list_head list;
 	struct list_head devices_list;
-	char *name;
+	char *name; /* filename under /dev/ */
+	char *partname; /* the partition name, usually the above without the
+			 * device part, i.e. name = "nand0.barebox" -> partname = "barebox"
+			 */
 	loff_t offset;
 	loff_t size;
 	unsigned int flags;
 	int open;
 	struct mtd_info *mtd;
+	u8 dos_partition_type;
 };
 
 int devfs_create(struct cdev *);
 int devfs_remove(struct cdev *);
 int cdev_find_free_index(const char *);
+struct cdev *device_find_partition(struct device_d *dev, const char *name);
 struct cdev *cdev_by_name(const char *filename);
 struct cdev *cdev_open(const char *name, unsigned long flags);
+int cdev_do_open(struct cdev *, unsigned long flags);
 void cdev_close(struct cdev *cdev);
 int cdev_flush(struct cdev *cdev);
 ssize_t cdev_read(struct cdev *cdev, void *buf, size_t count, loff_t offset, ulong flags);
@@ -463,19 +459,53 @@ ssize_t cdev_write(struct cdev *cdev, const void *buf, size_t count, loff_t offs
 int cdev_ioctl(struct cdev *cdev, int cmd, void *buf);
 int cdev_erase(struct cdev *cdev, size_t count, loff_t offset);
 
-#define DEVFS_PARTITION_FIXED		(1 << 0)
-#define DEVFS_PARTITION_READONLY	(1 << 1)
+#define DEVFS_PARTITION_FIXED		(1U << 0)
+#define DEVFS_PARTITION_READONLY	(1U << 1)
 #define DEVFS_IS_PARTITION		(1 << 2)
 #define DEVFS_IS_CHARACTER_DEV		(1 << 3)
 
-int devfs_add_partition(const char *devname, loff_t offset, loff_t size,
-		int flags, const char *name);
+struct cdev *devfs_add_partition(const char *devname, loff_t offset,
+		loff_t size, unsigned int flags, const char *name);
 int devfs_del_partition(const char *name);
+
+#define DEVFS_PARTITION_APPEND		0
+
+/**
+ * struct devfs_partition - defines parameters for a single partition
+ * @offset: start of partition
+ * 	a negative offset requests to start the partition relative to the
+ * 	device's end. DEVFS_PARTITION_APPEND (i.e. 0) means start directly at
+ * 	the end of the previous partition.
+ * @size: size of partition
+ * 	a non-positive value requests to use a size that keeps -size free space
+ * 	after the current partition. A special case of this is passing 0, which
+ * 	means "until end of device".
+ * @flags: flags passed to devfs_add_partition
+ * @name: name passed to devfs_add_partition
+ * @bbname: if non-NULL also dev_add_bb_dev() is called for the partition during
+ * 	devfs_create_partitions().
+ */
+struct devfs_partition {
+	loff_t offset;
+	loff_t size;
+	unsigned int flags;
+	const char *name;
+	const char *bbname;
+};
+/**
+ * devfs_create_partitions - create a set of partitions for a device
+ * @devname: name of the device to partition
+ * @partinfo: array of partition parameters
+ * 	The array is processed until an entry with .name = NULL is found.
+ */
+int devfs_create_partitions(const char *devname,
+		const struct devfs_partition partinfo[]);
 
 #define DRV_OF_COMPAT(compat) \
 	IS_ENABLED(CONFIG_OFDEVICE) ? (compat) : NULL
 
 int dev_get_drvdata(struct device_d *dev, unsigned long *data);
 
-#endif /* DRIVER_H */
+int device_match_of_modalias(struct device_d *dev, struct driver_d *drv);
 
+#endif /* DRIVER_H */

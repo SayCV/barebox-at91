@@ -57,7 +57,6 @@ static int netx_devices_init(void) {
 
 	protect_file("/dev/env0", 1);
 
-	armlinux_set_bootparams((void *)0x80000100);
 	armlinux_set_architecture(MACH_TYPE_NXDB500);
 
 	return 0;
@@ -72,6 +71,9 @@ static int netx_console_init(void)
 	*(volatile unsigned long *)(0x00100804) = 2;
 	*(volatile unsigned long *)(0x00100808) = 2;
 	*(volatile unsigned long *)(0x0010080c) = 2;
+
+	barebox_set_model("Hilscher Netx nxdb500");
+	barebox_set_hostname("nxdb500");
 
 	add_generic_device("netx_serial", DEVICE_ID_DYNAMIC, NULL, NETX_PA_UART0, 0x40,
 			   IORESOURCE_MEM, NULL);

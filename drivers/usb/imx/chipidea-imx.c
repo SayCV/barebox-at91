@@ -15,9 +15,12 @@
 #include <common.h>
 #include <init.h>
 #include <io.h>
+#include <of.h>
+#include <errno.h>
 #include <driver.h>
 #include <usb/usb.h>
 #include <usb/ehci.h>
+#include <regulator.h>
 #include <usb/chipidea-imx.h>
 #include <usb/ulpi.h>
 #include <usb/fsl_usb2.h>
@@ -26,11 +29,15 @@
 
 struct imx_chipidea {
 	struct device_d *dev;
+	void __iomem *base;
 	struct ehci_data data;
 	unsigned long flags;
-	enum imx_usb_mode mode;
-	int (*init)(int port);
+	uint32_t mode;
 	int portno;
+	enum usb_phy_interface phymode;
+	struct param_d *param_mode;
+	int role_registered;
+	struct regulator *vbus;
 };
 
 static int imx_chipidea_port_init(void *drvdata)
@@ -38,12 +45,26 @@ static int imx_chipidea_port_init(void *drvdata)
 	struct imx_chipidea *ci = drvdata;
 	int ret;
 
+	if ((ci->flags & MXC_EHCI_PORTSC_MASK) == MXC_EHCI_MODE_ULPI) {
+		dev_dbg(ci->dev, "using ULPI phy\n");
+		if (IS_ENABLED(CONFIG_USB_ULPI)) {
+			ret = ulpi_setup(ci->base + 0x170, 1);
+			if (ret)
+				dev_err(ci->dev, "ULPI setup failed with %s\n",
+						strerror(-ret));
+			mdelay(20);
+		} else {
+			dev_err(ci->dev, "no ULPI support available\n");
+			ret = -ENODEV;
+		}
+
+		if (ret)
+			return ret;
+	}
+
 	ret = imx_usbmisc_port_init(ci->portno, ci->flags);
 	if (ret)
 		dev_err(ci->dev, "misc init failed: %s\n", strerror(-ret));
-
-	if (ci->init)
-		ci->init(ci->portno);
 
 	return ret;
 }
@@ -62,16 +83,14 @@ static int imx_chipidea_port_post_init(void *drvdata)
 
 static int imx_chipidea_probe_dt(struct imx_chipidea *ci)
 {
-	const void *out_args;
-	struct device_node *usbmisc_np;
+	struct of_phandle_args out_args;
 	enum usb_dr_mode mode;
-	enum usb_phy_interface phymode;
 
-	of_parse_phandles_with_args(ci->dev->device_node, "fsl,usbmisc",
-			"#index-cells", 0, &usbmisc_np, &out_args);
+	if (of_parse_phandle_with_args(ci->dev->device_node, "fsl,usbmisc",
+					"#index-cells", 0, &out_args))
+		return -ENODEV;
 
-	ci->portno = be32_to_cpup(out_args);
-
+	ci->portno = out_args.args[0];
 	ci->flags = MXC_EHCI_MODE_UTMI_8BIT;
 
 	mode = of_usb_get_dr_mode(ci->dev->device_node, NULL);
@@ -84,10 +103,23 @@ static int imx_chipidea_probe_dt(struct imx_chipidea *ci)
 	case USB_DR_MODE_PERIPHERAL:
 		ci->mode = IMX_USB_MODE_DEVICE;
 		break;
+	case USB_DR_MODE_OTG:
+		ci->mode = IMX_USB_MODE_OTG;
+		break;
+	case USB_DR_MODE_UNKNOWN:
+		/*
+		 * No dr_mode specified. This means it can either be OTG
+		 * for port 0 or host mode for the other host-only ports.
+		 */
+		if (ci->portno == 0)
+			ci->mode = IMX_USB_MODE_OTG;
+		else
+			ci->mode = IMX_USB_MODE_HOST;
+		break;
 	}
 
-	phymode = of_usb_get_phy_mode(ci->dev->device_node, NULL);
-	switch (phymode) {
+	ci->phymode = of_usb_get_phy_mode(ci->dev->device_node, NULL);
+	switch (ci->phymode) {
 	case USBPHY_INTERFACE_MODE_UTMI:
 		ci->flags = MXC_EHCI_MODE_UTMI_8BIT;
 		break;
@@ -104,13 +136,79 @@ static int imx_chipidea_probe_dt(struct imx_chipidea *ci)
 		ci->flags = MXC_EHCI_MODE_HSIC;
 		break;
 	default:
-		dev_err(ci->dev, "no or invalid phy mode setting\n");
-		return -EINVAL;
+		dev_dbg(ci->dev, "no phy_type setting. Relying on reset default\n");
 	}
 
-	if (of_find_property(ci->dev->device_node, "disable-over-current"))
+	if (of_find_property(ci->dev->device_node,
+				"disable-over-current", NULL))
 		ci->flags |= MXC_EHCI_DISABLE_OVERCURRENT;
 
+	return 0;
+}
+
+static int ci_register_role(struct imx_chipidea *ci)
+{
+	if (ci->role_registered)
+		return -EBUSY;
+
+	if (ci->mode == IMX_USB_MODE_HOST) {
+		if (IS_ENABLED(CONFIG_USB_EHCI)) {
+			ci->role_registered = 1;
+			return ehci_register(ci->dev, &ci->data);
+		} else {
+			dev_err(ci->dev, "Host support not available\n");
+			return -ENODEV;
+		}
+	}
+
+	if (ci->mode == IMX_USB_MODE_DEVICE) {
+		if (IS_ENABLED(CONFIG_USB_GADGET_DRIVER_ARC)) {
+			ci->role_registered = 1;
+			return ci_udc_register(ci->dev, ci->base);
+		} else {
+			dev_err(ci->dev, "USB device support not available\n");
+			return -ENODEV;
+		}
+	}
+
+	return 0;
+}
+
+static int ci_set_mode(struct param_d *param, void *priv)
+{
+	struct imx_chipidea *ci = priv;
+
+	if (ci->role_registered)
+		return -EBUSY;
+
+	return ci_register_role(ci);
+}
+
+static const char *ci_mode_names[] = {
+	"host", "peripheral", "otg"
+};
+
+static struct device_d imx_otg_device = {
+	.name = "otg",
+	.id = DEVICE_ID_SINGLE,
+};
+
+static int ci_register_otg_device(struct imx_chipidea *ci)
+{
+	int ret;
+
+	if (imx_otg_device.parent)
+		return -EBUSY;
+
+	imx_otg_device.parent = ci->dev;
+
+	ret = register_device(&imx_otg_device);
+	if (ret)
+		return ret;
+
+	ci->param_mode = dev_add_param_enum(&imx_otg_device, "mode",
+			ci_set_mode, NULL, &ci->mode,
+			ci_mode_names, ARRAY_SIZE(ci_mode_names), ci);
 	return 0;
 }
 
@@ -136,50 +234,41 @@ static int imx_chipidea_probe(struct device_d *dev)
 		}
 		ci->portno = dev->id;
 		ci->flags = pdata->flags;
-		ci->init = pdata->init;
 		ci->mode = pdata->mode;
 	}
+
+	ci->vbus = regulator_get(dev, "vbus");
+
+	regulator_enable(ci->vbus);
 
 	base = dev_request_mem_region(dev, 0);
 	if (!base)
 		return -ENODEV;
 
+	ci->base = base;
+
 	ci->data.init = imx_chipidea_port_init;
 	ci->data.post_init = imx_chipidea_port_post_init;
 	ci->data.drvdata = ci;
 
-	imx_chipidea_port_init(ci);
+	if ((ci->flags & MXC_EHCI_PORTSC_MASK) == MXC_EHCI_MODE_HSIC)
+		imx_chipidea_port_init(ci);
 
-	portsc = readl(base + 0x184);
-	portsc &= ~MXC_EHCI_PORTSC_MASK;
-	portsc |= ci->flags & MXC_EHCI_PORTSC_MASK;
-	writel(portsc, base + 0x184);
-
-	if ((ci->flags & MXC_EHCI_PORTSC_MASK) == MXC_EHCI_MODE_ULPI) {
-		dev_dbg(dev, "using ULPI phy\n");
-		if (IS_ENABLED(CONFIG_USB_ULPI)) {
-			ret = ulpi_setup(base + 0x170, 1);
-		} else {
-			dev_err(dev, "no ULPI support available\n");
-			ret = -ENODEV;
-		}
-
-		if (ret)
-			return ret;
+	if (ci->phymode != USBPHY_INTERFACE_MODE_UNKNOWN) {
+		portsc = readl(base + 0x184);
+		portsc &= ~MXC_EHCI_PORTSC_MASK;
+		portsc |= ci->flags & MXC_EHCI_PORTSC_MASK;
+		writel(portsc, base + 0x184);
 	}
 
 	ci->data.hccr = base + 0x100;
 	ci->data.hcor = base + 0x140;
 	ci->data.flags = EHCI_HAS_TT;
 
-	if (ci->mode == IMX_USB_MODE_HOST && IS_ENABLED(CONFIG_USB_EHCI)) {
-		ret = ehci_register(dev, &ci->data);
-	} else if (ci->mode == IMX_USB_MODE_DEVICE && IS_ENABLED(CONFIG_USB_GADGET_DRIVER_ARC)) {
-		ret = ci_udc_register(dev, base);
-	} else {
-		dev_err(dev, "No supported role\n");
-		ret = -ENODEV;
-	}
+	if (ci->mode == IMX_USB_MODE_OTG)
+		ret = ci_register_otg_device(ci);
+	else
+		ret = ci_register_role(ci);
 
 	return ret;
 };

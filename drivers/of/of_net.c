@@ -28,6 +28,7 @@ static const char *phy_modes[] = {
 	[PHY_INTERFACE_MODE_RGMII_TXID] = "rgmii-txid",
 	[PHY_INTERFACE_MODE_RTBI]	= "rtbi",
 	[PHY_INTERFACE_MODE_SMII]	= "smii",
+	[PHY_INTERFACE_MODE_QSGMII]	= "qsgmii",
 };
 
 /**
@@ -43,6 +44,8 @@ int of_get_phy_mode(struct device_node *np)
 	int err, i;
 
 	err = of_property_read_string(np, "phy-mode", &pm);
+	if (err < 0)
+		err = of_property_read_string(np, "phy-connection-type", &pm);
 	if (err < 0)
 		return err;
 
@@ -76,15 +79,15 @@ const void *of_get_mac_address(struct device_node *np)
 {
 	struct property *pp;
 
-	pp = of_find_property(np, "mac-address");
+	pp = of_find_property(np, "mac-address", NULL);
 	if (pp && (pp->length == 6) && is_valid_ether_addr(pp->value))
 		return pp->value;
 
-	pp = of_find_property(np, "local-mac-address");
+	pp = of_find_property(np, "local-mac-address", NULL);
 	if (pp && (pp->length == 6) && is_valid_ether_addr(pp->value))
 		return pp->value;
 
-	pp = of_find_property(np, "address");
+	pp = of_find_property(np, "address", NULL);
 	if (pp && (pp->length == 6) && is_valid_ether_addr(pp->value))
 		return pp->value;
 

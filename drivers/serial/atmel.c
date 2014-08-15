@@ -362,6 +362,32 @@ static int atmel_serial_setbaudrate(struct console_device *cdev, int baudrate)
 	return 0;
 }
 
+static int atmel_serial_set_mode(struct console_device *cdev, enum console_mode mode)
+{
+	struct atmel_uart_port *uart = to_atmel_uart_port(cdev);
+	u32 mr;
+	u8 m;
+
+	mr = readl(uart->base + USART3_MR);
+	mr &= ~0xf;
+
+	switch (mode) {
+	case CONSOLE_MODE_NORMAL:
+		m = USART3_USART_MODE_NORMAL;
+		break;
+	case CONSOLE_MODE_RS485:
+		m = USART3_USART_MODE_RS485;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	mr |= USART3_BF(USART_MODE, m);
+	writel(mr, uart->base + USART3_MR);
+
+	return 0;
+}
+
 /*
  * Initialise the serial port with the given baudrate. The settings
  * are always 8 data bits, no parity, 1 stop bit, no start bits.
@@ -378,8 +404,6 @@ static int atmel_serial_init_port(struct console_device *cdev)
 	uart->uartclk = clk_get_rate(uart->clk);
 
 	writel(USART3_BIT(RSTRX) | USART3_BIT(RSTTX), uart->base + USART3_CR);
-
-	atmel_serial_setbaudrate(cdev, 115200);
 
 	writel(USART3_BIT(RXEN) | USART3_BIT(TXEN), uart->base + USART3_CR);
 	writel((USART3_BF(USART_MODE, USART3_USART_MODE_NORMAL)
@@ -399,11 +423,11 @@ static int atmel_serial_probe(struct device_d *dev)
 	uart = xzalloc(sizeof(struct atmel_uart_port));
 	cdev = &uart->uart;
 	cdev->dev = dev;
-	cdev->f_caps = CONSOLE_STDIN | CONSOLE_STDOUT | CONSOLE_STDERR;
 	cdev->tstc = atmel_serial_tstc;
 	cdev->putc = atmel_serial_putc;
 	cdev->getc = atmel_serial_getc;
 	cdev->setbrg = atmel_serial_setbaudrate;
+	cdev->set_mode = atmel_serial_set_mode;
 
 	atmel_serial_init_port(cdev);
 

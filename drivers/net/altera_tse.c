@@ -376,7 +376,7 @@ static int tse_eth_send(struct eth_device *edev, void *packet, int length)
 
 	alt_sgdma_do_sync_transfer(tx_sgdma, tx_desc_cur);
 
-	return 0;;
+	return 0;
 }
 
 static void tse_eth_halt(struct eth_device *edev)
@@ -402,7 +402,7 @@ static int tse_eth_rx(struct eth_device *edev)
 		ALT_SGDMA_DESCRIPTOR_STATUS_TERMINATED_BY_EOP_MSK) {
 
 		packet_length = rx_desc->actual_bytes_transferred;
-		net_receive(NetRxPackets[0], packet_length);
+		net_receive(edev, NetRxPackets[0], packet_length);
 
 		/* Clear Run */
 		rx_sgdma->control = (rx_sgdma->control & (~ALT_SGDMA_CONTROL_RUN_MSK));

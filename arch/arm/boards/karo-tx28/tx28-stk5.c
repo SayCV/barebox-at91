@@ -23,14 +23,16 @@
 #include <io.h>
 #include <net.h>
 #include <asm/sections.h>
+#include <linux/err.h>
 #include <mach/imx-regs.h>
 #include <mach/clock.h>
 #include <mach/mci.h>
 #include <mach/fb.h>
 #include <mach/ocotp.h>
+#include <mach/iomux.h>
 
 static struct mxs_mci_platform_data mci_pdata = {
-	.caps = MMC_MODE_4BIT,
+	.caps = MMC_CAP_4_BIT_DATA,
 	.voltages = MMC_VDD_32_33 | MMC_VDD_33_34,	/* fixed to 3.3 V */
 	.f_min = 400 * 1000,
 	.f_max = 25000000,
@@ -70,7 +72,6 @@ static struct fb_videomode tx28evk_vmodes[] = {
 		.lower_margin = 10,
 		.sync = FB_SYNC_DE_HIGH_ACT,
 		.vmode = FB_VMODE_NONINTERLACED,
-		.flag = 0,
 	}, {
 	/*
 	 * Emerging ETV570 640 x 480 display (directly connected)
@@ -91,7 +92,6 @@ static struct fb_videomode tx28evk_vmodes[] = {
 		.lower_margin = 10,
 		.sync = FB_SYNC_DE_HIGH_ACT,
 		.vmode = FB_VMODE_NONINTERLACED,
-		.flag = 0,
 		/*
 		 * This display is connected:
 		 *  display side   -> CPU side
@@ -125,7 +125,6 @@ static struct fb_videomode tx28evk_vmodes[] = {
 		.sync = FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
 				FB_SYNC_DE_HIGH_ACT,
 		.vmode = FB_VMODE_NONINTERLACED,
-		.flag = 0,
 	}, {
 	/*
 	 * Modeline "1024x768" x 60.0
@@ -147,7 +146,6 @@ static struct fb_videomode tx28evk_vmodes[] = {
 		.lower_margin = 3,
 		.sync = FB_SYNC_DE_HIGH_ACT,
 		.vmode = FB_VMODE_NONINTERLACED,
-		.flag = 0,
 	}, {
 	/*
 	 * Modeline "1280x1024" x 60.0
@@ -170,7 +168,6 @@ static struct fb_videomode tx28evk_vmodes[] = {
 		.sync = FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
 				FB_SYNC_DE_HIGH_ACT,
 		.vmode = FB_VMODE_NONINTERLACED,
-		.flag = 0,
 	},
 };
 
@@ -343,8 +340,11 @@ static int register_persistent_environment(void)
 	}
 
 	/* use the full partition as our persistent environment storage */
-	return devfs_add_partition("disk0.1", 0, cdev->size,
+	cdev = devfs_add_partition("disk0.1", 0, cdev->size,
 					DEVFS_PARTITION_FIXED, "env0");
+	if (IS_ERR(cdev))
+		return PTR_ERR(cdev);
+	return 0;
 }
 
 void tx28_get_ethaddr(void)
@@ -371,11 +371,6 @@ void base_board_init(void)
 	for (i = 0; i < ARRAY_SIZE(tx28_starterkit_pad_setup); i++)
 		imx_gpio_mode(tx28_starterkit_pad_setup[i]);
 
-	/* enable IOCLK0 to run at the PLL frequency */
-	imx_set_ioclk(0, 480000000);
-	/* run the SSP unit clock at 100 MHz */
-	imx_set_sspclk(0, 100000000, 1);
-
 	add_generic_device("mxs_mci", 0, NULL, IMX_SSP0_BASE, 0x2000,
 			   IORESOURCE_MEM, &mci_pdata);
 
@@ -392,7 +387,6 @@ void base_board_init(void)
 
 	tx28_get_ethaddr();
 
-	imx_enable_enetclk();
 	add_generic_device("imx28-fec", 0, NULL, IMX_FEC0_BASE, 0x4000,
 			   IORESOURCE_MEM, &fec_info);
 
@@ -404,6 +398,9 @@ void base_board_init(void)
 
 static int tx28kit_console_init(void)
 {
+	barebox_set_model("Ka-Ro TX28");
+	barebox_set_hostname("tx28");
+
 	add_generic_device("stm_serial", 0, NULL, IMX_DBGUART_BASE, 0x2000,
 			   IORESOURCE_MEM, NULL);
 
