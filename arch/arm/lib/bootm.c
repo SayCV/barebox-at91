@@ -437,7 +437,7 @@ static int do_bootm_rtems(struct image_data *data)
 
 	kernel = data->os_res->start + data->os_entry;
 	
-	printf ("## Transferring control to RTEMS (at address %08lx) ...\n\r",
+	printf ("\n## Transferring control to SayOS (at address %08lx) ...\n\r",
 		(ulong)kernel);
 
 	if (bootm_verbose(data)) {

@@ -2,22 +2,22 @@
 
 # use 'dhcp' to do dhcp in barebox and in kernel
 # use 'none' if you want to skip kernel ip autoconfiguration
-ip=dhcp-barebox
+ip=none
 global.dhcp.vendor_id=barebox-at91sam9x5ek
 global.dhcp.client_id="${at91sam9x5cm.board}-${at91sam9x5cm.vendor}"
 
 # or set your networking parameters here
-#eth0.ipaddr=a.b.c.d
-#eth0.netmask=a.b.c.d
-#eth0.gateway=a.b.c.d
-#eth0.serverip=a.b.c.d
+eth0.ipaddr=192.169.0.128
+eth0.netmask=255.255.255.0
+eth0.gateway=192.169.0.1
+eth0.serverip=192.169.0.1
 
 # can be either 'nfs', 'tftp', 'nor' or 'nand'
 kernel_loc=nand
 # can be either 'net', 'nor', 'nand' or 'initrd'
 rootfs_loc=nand
 # can be either 'nfs', 'tftp', 'nand' or empty
-oftree_loc=
+oftree_loc=nand
 
 # can be either 'jffs2' or 'ubifs'
 rootfs_type=ubifs

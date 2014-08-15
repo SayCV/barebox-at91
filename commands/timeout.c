@@ -79,7 +79,7 @@ static int do_timeout(int argc, char *argv[])
 				goto  out;
 			if (flags & TIMEOUT_ANYKEY)
 				goto out;
-			if (flags & TIMEOUT_RETURN && key == '\n')
+			if (flags & TIMEOUT_RETURN && (key == '\n' || key == 13))
 				goto out;
 			key = 0;
 		}
